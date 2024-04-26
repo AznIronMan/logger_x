@@ -88,8 +88,6 @@ def api_listener(
 
     load_dotenv(find_dotenv(usecwd=True))
 
-    print(os.getenv("API_PORT"))
-
     def verify_secret_key(x_secret_key: str = Header(...)):
         if x_secret_key != os.getenv("SECRET_KEY"):
             raise HTTPException(status_code=403, detail="Invalid secret key")
@@ -1045,6 +1043,9 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
 if __name__ == "__main__":
     try:
         load_dotenv(find_dotenv(usecwd=True))
+        
+        print(os.getenv("API_PORT"))
+        
         parser = argparse.ArgumentParser(description="Logger_X Server by CNB, LLC v1.1.0")
 
         parser.add_argument(
