@@ -1110,7 +1110,7 @@ if __name__ == "__main__":
             if args.port:
                 port = args.port
             else:
-                port = os.getenv("API_PORT", 8000)
+                port = int(os.getenv("API_PORT", 8000))
             if args.ssl:
                 ssl = args.ssl
             else:
