@@ -1044,8 +1044,6 @@ if __name__ == "__main__":
     try:
         load_dotenv(find_dotenv(usecwd=True))
         
-        print(os.getenv("API_PORT"))
-        
         parser = argparse.ArgumentParser(description="Logger_X Server by CNB, LLC v1.1.0")
 
         parser.add_argument(
@@ -1102,9 +1100,21 @@ if __name__ == "__main__":
         elif args.gui:
             main_gui()
         elif args.listener:
-            ip = args.ip or "0.0.0.0"
-            port = args.port or 8000
-            ssl = args.ssl if args.ssl else None
+            ip = "0.0.0.0"
+            port = 8000
+            ssl = None
+            if args.ip:
+                ip = args.ip
+            else:
+                ip = os.getenv("API_HOST", "0.0.0.0")
+            if args.port:
+                port = args.port
+            else:
+                port = os.getenv("API_PORT", 8000)
+            if args.ssl:
+                ssl = args.ssl
+            else:
+                ssl = None
             api_listener(ip, port, ssl)
         elif args.console:
             main_console()
