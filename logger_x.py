@@ -1043,7 +1043,7 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
 if __name__ == "__main__":
     try:
         load_dotenv()
-        parser = argparse.ArgumentParser(description="Logger by GDV, LLC v1.0")
+        parser = argparse.ArgumentParser(description="Logger_X Server by CNB, LLC v1.1.0")
 
         parser.add_argument(
             "-a",
