@@ -871,7 +871,7 @@ def set_env(
             dotenv_path = ".env"
             with open(dotenv_path, "w"):
                 pass
-    load_dotenv(find_dotenv(usecwd=True))
+        load_dotenv(find_dotenv(usecwd=True))
         if new_info is None:
             new_info = get_env()
         if new_info.logger_mode in other_supported:
