@@ -23,6 +23,14 @@ from rich.logging import RichHandler
 from pydantic import BaseModel
 from typing import Any, Dict, NewType, Optional, Sequence, Tuple, Union
 
+
+# TODO: Add docstrings to all functions and classes
+# TODO: Add main_console() and main_gui() functions
+# TODO: Implement the create_new_database() function
+# TODO: look at file_exists(), dir_check(), fetch_log_path(), format_datetime(),
+#      get_database_info(), convert_sequence_to_dict(), revert_characters(),
+#      substitute_characters() for use cases or removal
+
 # Variables and Type Aliases
 
 PostgresConn = psycopg2.extensions.connection
@@ -38,14 +46,14 @@ Detailed_Result = Tuple[
 DBInfo = namedtuple(
     "DBInfo",
     [
-        "logger_mode",
-        "logger_dir",
-        "database_path",
-        "database_user",
-        "database_cred",
-        "database_host",
-        "database_port",
-        "database_name",
+        "LOGGER_MODE",
+        "LOGGER_DIR",
+        "DATABASE_PATH",
+        "DATABASE_USER",
+        "DATABASE_CRED",
+        "DATABASE_HOST",
+        "DATABASE_PORT",
+        "DATABASE_NAME",
     ],
 )
 LogInfo = namedtuple(
@@ -293,7 +301,7 @@ def connect_database(
         elif logger_mode == "file":
             raise Exception(
                 "This should not be happening."
-                "db_connect() called with logger_mode set to file."
+                "db_connect() called with LOGGER_MODE set to file."
             )
         else:
             raise Exception(f"{logger_mode} is either invalid or unsupported.")
@@ -606,8 +614,27 @@ def new_log_entry(
     misc: Optional[str] = None,
 ) -> Union[bool, Detailed_Result]:
     db_connection = None
-    dbinfo = set_env()
-    if dbinfo["logger_mode"] == "file":
+    #dbinfo = set_env()
+    raw_dbinfo = [os.getenv("LOGGER_MODE", "file"), 
+              os.getenv("LOGGER_DIR", ".logs"), 
+              os.getenv("DATABASE_PATH", ":memory:"), 
+              os.getenv("DATABASE_USER", "root"), 
+              os.getenv("DATABASE_CRED", "password"), 
+              os.getenv("DATABASE_HOST", "localhost"), 
+              int(os.getenv("DATABASE_PORT", 5432)), 
+              os.getenv("DATABASE_NAME", "logger")]
+    dbinfo = {
+        "LOGGER_MODE": raw_dbinfo[0],
+        "LOGGER_DIR": raw_dbinfo[1],
+        "DATABASE_PATH": raw_dbinfo[2],
+        "DATABASE_USER": raw_dbinfo[3],
+        "DATABASE_CRED": raw_dbinfo[4],
+        "DATABASE_HOST": raw_dbinfo[5],
+        "DATABASE_PORT": raw_dbinfo[6],
+        "DATABASE_NAME": raw_dbinfo[7],
+    }
+    print (dbinfo)
+    if dbinfo["LOGGER_MODE"] == "file":
         result = log_to_file(
             (
                 (f"{logging_msg}. Exception: {exception}")
@@ -734,7 +761,7 @@ def new_log_entry(
             )
 
             try:
-                dbpath = dbinfo["database_path"] if dbinfo else None
+                dbpath = dbinfo["DATABASE_PATH"] if dbinfo else None
                 db_connection = connect_database(dbpath)
                 if db_connection is not None and not hasattr(
                     db_connection, "rollback"
@@ -872,26 +899,26 @@ def set_env(
         load_dotenv(find_dotenv(usecwd=True))
         if new_info is None:
             new_info = get_env()
-        if new_info.logger_mode in other_supported:
-            keys_to_set = ["logger_mode", "logger_dir"]
-        elif new_info.logger_mode in supported_servers:
+        if new_info.LOGGER_MODE in other_supported:
+            keys_to_set = ["LOGGER_MODE", "LOGGER_DIR"]
+        elif new_info.LOGGER_MODE in supported_servers:
             keys_to_set = [
-                "logger_mode",
-                "logger_dir",
-                "database_user",
-                "database_cred",
-                "database_host",
-                "database_port",
-                "database_name",
+                "LOGGER_MODE",
+                "LOGGER_DIR",
+                "DATABASE_USER",
+                "DATABASE_CRED",
+                "DATABASE_HOST",
+                "DATABASE_PORT",
+                "DATABASE_NAME",
             ]
-        elif new_info.logger_mode in supported_file_db:
-            keys_to_set = ["logger_mode", "logger_dir", "database_path"]
+        elif new_info.LOGGER_MODE in supported_file_db:
+            keys_to_set = ["LOGGER_MODE", "LOGGER_DIR", "DATABASE_PATH"]
         else:
             logger_x.warning(
-                "Invalid logger_mode, defaulting to file as logger_mode"
+                "Invalid LOGGER_MODE, defaulting to file as LOGGER_MODE"
             )
             new_info = new_info._replace(logger_mode="file")
-            keys_to_set = ["logger_mode", "logger_dir"]
+            keys_to_set = ["LOGGER_MODE", "LOGGER_DIR"]
         for key in keys_to_set:
             value = getattr(new_info, key)
             if overwrite or os.getenv(key) is None:
