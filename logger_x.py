@@ -2,6 +2,7 @@ import argparse
 import inspect
 import json
 import linecache
+import logging
 import os
 import psycopg2
 import psycopg2.extras
@@ -17,7 +18,8 @@ from collections import namedtuple
 from datetime import datetime
 from dotenv import find_dotenv, load_dotenv, set_key
 from fastapi import FastAPI, HTTPException, Header, Depends
-from icecream import ic
+from rich.console import Console
+from rich.logging import RichHandler
 from pydantic import BaseModel
 from typing import Any, Dict, NewType, Optional, Sequence, Tuple, Union
 
@@ -49,6 +51,16 @@ DBInfo = namedtuple(
 LogInfo = namedtuple(
     "LogInfo", ["log_notes", "source", "level", "status", "internal"]
 )
+
+console = Console()
+
+logging.basicConfig(
+    level="NOTSET",
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
+logger_x = logging.getLogger("rich")
 
 
 class NewDBEntry(BaseModel):
@@ -179,23 +191,23 @@ def build_debug_message(
     status: Optional[str] = None,
     internal: Optional[str] = None,
 ) -> str:
-    ic_datetime = datetime.utcnow() if date_time is None else date_time
-    ic_level = "ERROR" if level is None else level
-    ic_log_notes = (
+    rich_datetime = datetime.utcnow() if date_time is None else date_time
+    rich_level = "ERROR" if level is None else level
+    rich_log_notes = (
         "Something went wrong (generic error message)."
         if log_notes is None
         else log_notes
     )
-    ic_source = socket.getfqdn().lower() if source is None else source
-    ic_status = "new" if status is None else status
+    rich_source = socket.getfqdn().lower() if source is None else source
+    rich_status = "new" if status is None else status
 
     try:
         debug_message = (
-            f"date_time:     {ic_datetime}\n"
-            f"level:         {ic_level}\n"
-            f"log_notes:     {ic_log_notes}\n"
-            f"source:        {ic_source}\n"
-            f"status:        {ic_status}\n"
+            f"date_time:     {rich_datetime}\n"
+            f"level:         {rich_level}\n"
+            f"log_notes:     {rich_log_notes}\n"
+            f"source:        {rich_source}\n"
+            f"status:        {rich_status}\n"
         )
         if internal:
             debug_message += f"internal:      {internal}\n"
@@ -319,7 +331,7 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
                     log_info.internal,
                 ),
             )
-        elif isinstance(db_connection, SQLiteConn):
+        elif type(db_connection) == SQLiteConn:
             cursor.execute(
                 """
                 INSERT INTO logger
@@ -353,7 +365,7 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
             status=log_info.status,
             internal=log_info.internal,
         )
-        ic(
+        logger_x.critical(
             f"[create_database_log({type(db_connection)}) failed]\n"
             f"[Exception]:{e}\n\n"
             f"[Detailed Info]:\n{error_message}"
@@ -385,7 +397,7 @@ def create_new_database(db_connection: DatabaseConn) -> bool:
                 )
                 """
             )
-        elif isinstance(db_connection, SQLiteConn):
+        elif type(db_connection) == SQLiteConn:
             cursor.execute(
                 """
                 CREATE TABLE logger (
@@ -469,9 +481,11 @@ def format_datetime(
 def get_database_info(database_info: Optional[DBInfo]) -> Optional[DBInfo]:
     env_info = get_env()
     merged_info = {
-        key: getattr(database_info, key)
-        if database_info and getattr(database_info, key) is not None
-        else value
+        key: (
+            getattr(database_info, key)
+            if database_info and getattr(database_info, key) is not None
+            else value
+        )
         for key, value in env_info._asdict().items()
     }
     return DBInfo(**merged_info)
@@ -595,9 +609,11 @@ def new_log_entry(
     dbinfo = set_env()
     if dbinfo["logger_mode"] == "file":
         result = log_to_file(
-            (f"{logging_msg}. Exception: {exception}")
-            if logging_msg
-            else str(exception),
+            (
+                (f"{logging_msg}. Exception: {exception}")
+                if logging_msg
+                else str(exception)
+            ),
             logging_level,
         )
         return result
@@ -698,7 +714,16 @@ def new_log_entry(
                     status=complete_package["status"],
                     internal=internal,
                 )
-                ic(debug_message)
+                if logging_level == "ERROR":
+                    logger_x.error(debug_message)
+                elif logging_level == "CRITICAL":
+                    logger_x.critical(debug_message)
+                elif logging_level == "WARNING":
+                    logger_x.warning(debug_message)
+                elif logging_level == "DEBUG":
+                    logger_x.debug(debug_message)
+                else:
+                    logger_x.info(debug_message)
 
             logging_info = LogInfo(
                 log_notes=complete_package["log_notes"],
@@ -750,7 +775,7 @@ def new_log_entry(
                         log_notes=str(db_log_exception),
                         internal=internal_info,
                     )
-                    ic(logging_msg)
+                    logger_x.critical(logging_msg)
                 log_to_file(
                     f"[create_db_log() failed]: {db_log_exception}",
                     "CRITICAL",
@@ -790,7 +815,16 @@ def new_log_entry(
                     log_notes=str(e),
                     internal=internal_info,
                 )
-                ic(logging_msg)
+                if logging_level == "ERROR":
+                    logger_x.error(debug_message)
+                elif logging_level == "CRITICAL":
+                    logger_x.critical(debug_message)
+                elif logging_level == "WARNING":
+                    logger_x.warning(debug_message)
+                elif logging_level == "DEBUG":
+                    logger_x.debug(debug_message)
+                else:
+                    logger_x.info(debug_message)
             log_to_file(
                 (
                     str(internal_info)
@@ -853,7 +887,9 @@ def set_env(
         elif new_info.logger_mode in supported_file_db:
             keys_to_set = ["logger_mode", "logger_dir", "database_path"]
         else:
-            ic("Invalid logger_mode, defaulting to file as logger_mode")
+            logger_x.warning(
+                "Invalid logger_mode, defaulting to file as logger_mode"
+            )
             new_info = new_info._replace(logger_mode="file")
             keys_to_set = ["logger_mode", "logger_dir"]
         for key in keys_to_set:
@@ -864,7 +900,7 @@ def set_env(
                 set_items[key] = str(value)
         return set_items
     except Exception as e:
-        ic(
+        logger_x.error(
             "Could not write to .env in set_env(). "
             "Attempting to write to memory instead."
             f"Error_Info: {e}"
@@ -877,7 +913,7 @@ def set_env(
                 set_items[key] = str(value)
             return set_items
         except Exception as e2:
-            ic(
+            logger_x.error(
                 "Could not write to memory either. "
                 f"Error in set_env(): {e2}"
             )
@@ -955,7 +991,7 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
                 set_clause.append("internal = %s")
                 values.append(json.dumps(internal))
             where_clause.append("uuid = %s")
-        elif isinstance(db_connection, SQLiteConn):
+        elif type(db_connection) == SQLiteConn:
             if status is not None:
                 set_clause.append("status = ?")
                 values.append(status)
@@ -1075,10 +1111,10 @@ if __name__ == "__main__":
                 "or use arguments to run.\n"
                 "Options: -a/--add, -u/--update, -g/--gui, -l/--listener, -c/--console"
             )
-            ic(message)
+            logger_x.critical(message)
             sys.exit(1)
         sys.exit(0)
     except Exception as e:
         error_msg = f"[main() failed]: {e}"
-        ic(error_msg)
+        logger_x.critical(error_msg)
         sys.exit(1)

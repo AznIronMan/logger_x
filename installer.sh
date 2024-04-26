@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "Starting Logger by GDV, LLC Installer..."
+echo "Starting Logger_X by CNB, LLC Installer..."
 echo
 if [[ $EUID -ne 0 ]]; then
     echo "ERROR: This script requires administrative privileges. Please run as root or with sudo."
@@ -67,7 +67,7 @@ if ! command -v wget >/dev/null 2>&1; then
 fi
 check_and_install_python() {
     local python_version=$(python3 --version 2>&1)
-    local min_python_version="3.11."
+    local min_python_version="3.10."
     local target_python_version="3.12."
     local python_found=false
 
@@ -80,7 +80,7 @@ check_and_install_python() {
         echo 
         read -p "Do you want to download and install Python 3.12? [Y/N]: " install_python
         if [[ ${install_python,,} != "y" ]]; then
-            echo "ERROR: Python 3.11.x or Python 3.12.x is required. Exiting."
+            echo "ERROR: Python 3.10 or higher is required. Exiting."
             echo
             exit 1
         fi
@@ -118,29 +118,29 @@ if [[ -z "$VIRTUAL_ENV" ]]; then
     exit 1
 fi
 if [[ -x logger_help.sh ]]; then
-    echo "SUCCESS: Everything looks good. You can run 'logger_help.bat' to begin logger helper."
-    echo "Run 'logger_help.sh' to begin logger helper."
+    echo "SUCCESS: Everything looks good. You can run 'logger_help.bat' to begin Logger_X server helper."
+    echo "Run 'logger_help.sh' to begin Logger_X server helper."
     echo
 fi
 echo "Using virtual environment: $VIRTUAL_ENV"
 echo
 python3 -m pip install --upgrade pip
 pip install -r requirements.txt
-pip list | grep icecream &>/dev/null
+pip list | grep rich &>/dev/null
 if [[ $? -eq 0 ]]; then
     echo "#!/bin/bash" > logger_help.sh
     echo "source ./.venv/bin/activate" >> logger_help.sh
-    echo "echo use 'python .\logger.py --help' to launch with args helper" >> logger_help.sh
+    echo "echo use 'python .\logger_x.py --help' to launch with args helper" >> logger_help.sh
     chmod +x logger_help.sh
     if [[ -x logger_help.sh ]]; then
         echo "SUCCESS: Logger server installed successfully."
-        echo "Run 'logger_help.sh' to begin logger helper."
+        echo "Run 'logger_help.sh' to begin Logger_X server helper."
     else
         echo "ERROR: Could not create or execute logger_help.sh."
         exit 1
     fi
 else
-    echo "ERROR: icecream package is not installed, could not complete installation. Please try again."
+    echo "ERROR: rich package is not installed, could not complete installation. Please try again."
     exit 1
 fi
 

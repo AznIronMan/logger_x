@@ -1,6 +1,6 @@
 @echo off
 NET SESSION >nul 2>&1
-echo Starting Logger by GDV, LLC Installer...
+echo Starting Logger_X Server by CNB, LLC Installer...
 echo.
 if %ERRORLEVEL% neq 0 (
     echo ERROR: This script requires administrative privileges. Please run as administrator.
@@ -9,7 +9,7 @@ if %ERRORLEVEL% neq 0 (
 )
 setlocal EnableDelayedExpansion
 if not exist .venv\Scripts (
-    set "MIN_PYTHON_VERSION=3.11."
+    set "MIN_PYTHON_VERSION=3.10."
     set "PYTHON_VERSION_FOUND=false"
     set "PYTHON_VERSION=3.12."
     set "PYTHON_URL=https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe"
@@ -39,7 +39,7 @@ if not exist .venv\Scripts (
         set /P "INSTALL_PYTHON=Do you want to download and install Python 3.12? [Y/N]: "
         set "INSTALL_PYTHON_LC=!INSTALL_PYTHON:~0,1!"
         if /I "!INSTALL_PYTHON_LC!" NEQ "y" (
-            echo ERROR: Python 3.11.x or Python 3.12.x is required. Exiting.
+            echo ERROR: Python 3.10.x or higher is required. Exiting.
             echo.
             exit /b 1
         )
@@ -64,7 +64,7 @@ if not exist .venv\Scripts (
 )
 call .venv\Scripts\activate.bat
 if defined VIRTUAL_ENV (
-    if exist logger_help.bat echo SUCCESS: Everything looks good. You can run 'logger_help.bat' to begin logger helper.
+    if exist logger_help.bat echo SUCCESS: Everything looks good. You can run 'logger_help.bat' to begin Logger_X server helper.
     if exist logger_help.bat echo.
     if exist logger_help.bat goto :End
     echo Using virtual environment: %VIRTUAL_ENV%
@@ -76,15 +76,15 @@ if defined VIRTUAL_ENV (
 )
 python.exe -m pip install --upgrade pip > nul 2>&1
 pip install -r requirements.txt > nul 2>&1
-pip list | findstr /C:"icecream" > nul 2>&1
+pip list | findstr /C:"rich" > nul 2>&1
 if %ERRORLEVEL% == 0 (
     if exist logger_help.bat del logger_help.bat
     echo @echo off > logger_help.bat
     echo call .venv\Scripts\activate.bat >> logger_help.bat
-    echo echo use 'python .\logger.py --help' to launch with args helper >> logger_help.bat
+    echo echo use 'python .\logger_x.py --help' to launch with args helper >> logger_help.bat
     if exist logger_help.bat (
-        echo SUCCESS: Logger server installed successfully.
-        echo Run 'logger_help.bat' to begin logger helper.
+        echo SUCCESS: Logger_X server installed successfully.
+        echo Run 'logger_help.bat' to begin Logger_X server helper.
         echo.
     ) else (
         echo ERROR: Could not create or execute logger_help.bat.
@@ -92,7 +92,7 @@ if %ERRORLEVEL% == 0 (
         exit /b 1
     )
 ) else (
-    echo ERROR: icecream package is not installed, could not complete installation. Please try again.
+    echo ERROR: rich package is not installed, could not complete installation. Please try again.
     echo.
     exit /b 1
 )
