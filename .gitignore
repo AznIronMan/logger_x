@@ -152,6 +152,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+webgui/node_modules/
 
 .DS_STORE
 node_modules

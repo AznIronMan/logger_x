@@ -17,10 +17,10 @@ import uuid
 from collections import namedtuple
 from datetime import datetime
 from dotenv import find_dotenv, load_dotenv, set_key
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import Depends, FastAPI, Header, HTTPException, Path
 from rich.console import Console
 from rich.logging import RichHandler
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Dict, NewType, Optional, Sequence, Tuple, Union
 
 
@@ -55,6 +55,10 @@ DBInfo = namedtuple(
         "DATABASE_PORT",
         "DATABASE_NAME",
     ],
+)
+FullLogInfo = namedtuple(
+    "FullLogInfo",
+    ["log_id", "uuid", "log_notes", "source", "level", "internal"],
 )
 LogInfo = namedtuple(
     "LogInfo", ["log_notes", "source", "level", "status", "internal"]
@@ -101,22 +105,21 @@ def api_listener(
             raise HTTPException(status_code=403, detail="Invalid secret key")
 
     @app.post("/add")
-    async def add_entry(
+    async def api_add_entry(
         entry: NewDBEntry, secret_key: str = Depends(verify_secret_key)
     ):
         try:
-            if entry.success:
-                new_log_entry(
-                    logging_msg=entry.log_notes if entry.log_notes else None,
-                    logging_level=entry.level if entry.level else "INFO",
-                    success=True,
-                    misc=entry.misc if entry.misc else None,
-                )
             new_log_entry(
-                logging_msg=entry.log_notes if entry.log_notes else None,
-                logging_level=entry.level if entry.level else "ERROR",
-                success=False,
-                misc=entry.misc if entry.misc else None,
+                logging_msg=entry.log_notes,
+                logging_level=(
+                    entry.level
+                    if entry.level is not None and bool(entry.success)
+                    else "ERROR"
+                ),
+                success=(
+                    bool(entry.success) if entry.success is not None else False
+                ),
+                misc=entry.misc,
             )
             return {"status": "success"}
         except Exception as e:
@@ -124,8 +127,8 @@ def api_listener(
             new_log_entry(exception=exception, logging_level="CRITICAL")
             return {"status": "failure"}
 
-    @app.post("/update")
-    async def update_entry(
+    @app.post("/update/")
+    async def api_update_entry(
         entry: UpdateDBLog, secret_key: str = Depends(verify_secret_key)
     ):
         try:
@@ -163,6 +166,118 @@ def api_listener(
         except Exception as e:
             exception = HTTPException(status_code=500, detail=str(e))
             new_log_entry(exception=exception, logging_level="CRITICAL")
+            return {"status": "failure"}
+
+    @app.get("/nextlogid")
+    async def api_next_log_id(secret_key: str = Depends(verify_secret_key)):
+        try:
+            db_connection = connect_database()
+            next_id = get_next_log_id(db_connection)
+            close_database(db_connection)
+            return {"next_log_id": next_id}
+        except Exception as e:
+            logger_x.error(
+                f"Failed to fetch next log ID: {str(e)}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Failed to fetch next log ID"
+            )
+
+    @app.get("/uuid/{log_id}")
+    async def api_get_uuid(
+        log_id: int, secret_key: str = Depends(verify_secret_key)
+    ):
+        try:
+            db_connection = connect_database()
+            uuid = get_uuid_by_log_id(db_connection, log_id)
+            close_database(db_connection)
+            if uuid:
+                return {"uuid": uuid}
+            else:
+                raise HTTPException(status_code=404, detail="Log ID not found")
+        except Exception as e:
+            exception = HTTPException(status_code=500, detail=str(e))
+            new_log_entry(exception=exception, logging_level="CRITICAL")
+            return {"status": "failure"}
+
+    @app.get("/getlog/{uuid}")
+    async def api_get_log(
+        uuid: str, secret_key: str = Depends(verify_secret_key)
+    ):
+        try:
+            db_connection = connect_database()
+            log = get_log_by_uuid(db_connection, uuid)
+            close_database(db_connection)
+            if log:
+                return log
+            else:
+                raise HTTPException(status_code=404, detail="UUID not found")
+        except Exception as e:
+            exception = HTTPException(status_code=500, detail=str(e))
+            new_log_entry(exception=exception, logging_level="CRITICAL")
+            return {"status": "failure"}
+
+    @app.delete("/admindeletelog/{log_id}/{uuid}/")
+    async def api_delete_log(
+        log_id: int,
+        uuid: str,
+        secret_key: str = Depends(verify_secret_key),
+    ):
+        try:
+            db_connection = connect_database()
+            cursor = db_connection.cursor()
+            cursor.execute(
+                "SELECT id FROM logger WHERE id = %s AND uuid = %s",
+                (log_id, uuid),
+            )
+            if not cursor.fetchone():
+                cursor.close()
+                close_database(db_connection)
+                raise HTTPException(
+                    status_code=404, detail="Log ID and UUID not found"
+                )
+
+            result = delete_log_admin(db_connection, log_id, uuid)
+
+            cursor.close()
+            close_database(db_connection)
+            return result
+        except Exception as e:
+            exception = HTTPException(status_code=500, detail=str(e))
+            new_log_entry(exception=exception, logging_level="CRITICAL")
+            close_database(db_connection)
+            return {"status": "failure"}
+
+    @app.delete("/deletelog/{log_id}/{uuid}/")
+    async def api_update_log_to_deleted(
+        log_id: int,
+        uuid: str,
+        secret_key: str = Depends(verify_secret_key),
+    ):
+        try:
+            db_connection = connect_database()
+            cursor = db_connection.cursor()
+            cursor.execute(
+                "SELECT id FROM logger WHERE id = %s AND uuid = %s",
+                (log_id, uuid),
+            )
+            if not cursor.fetchone():
+                console.log("NO:", cursor.fetchone())
+                cursor.close()
+                close_database(db_connection)
+                raise HTTPException(
+                    status_code=404, detail="Log ID and UUID not found"
+                )
+
+            result = set_log_to_deleted(db_connection, log_id, uuid)
+
+            cursor.close()
+            close_database(db_connection)
+            return result
+        except Exception as e:
+            exception = HTTPException(status_code=500, detail=str(e))
+            new_log_entry(exception=exception, logging_level="CRITICAL")
+            close_database(db_connection)
             return {"status": "failure"}
 
     api_host = os.getenv("API_HOST", "0.0.0.0") if host is None else host
@@ -441,6 +556,27 @@ def create_new_database(db_connection: DatabaseConn) -> bool:
         return False
 
 
+def delete_log_admin(
+    db_connection: DatabaseConn, log_id: int, uuid: str
+) -> bool:
+    cursor = db_connection.cursor()
+    print(uuid)
+    if isinstance(db_connection, PostgresConn):
+        cursor.execute(
+            "DELETE FROM logger WHERE id = %s AND uuid = %s", (log_id, uuid)
+        )
+    elif type(db_connection) == SQLiteConn:
+        cursor.execute(
+            "DELETE FROM logger WHERE id = ? AND uuid = ?", (log_id, uuid)
+        )
+    else:
+        raise Exception("Unsupported database connection type")
+
+    db_connection.commit()
+    cursor.close()
+    return True
+
+
 def dir_check(dir_path: str, create_dir: bool = True) -> bool:
     return check_function(dir_path, create_dir, is_directory=True)
 
@@ -522,6 +658,75 @@ def get_env() -> DBInfo:
     )
 
     return env_info
+
+
+def get_log_by_uuid(
+    db_connection: DatabaseConn, uuid: str
+) -> Optional[Dict[str, Any]]:
+    cursor = db_connection.cursor()
+    try:
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute(
+                "SELECT id, uuid, log_notes, source, level, internal FROM logger WHERE uuid = %s",
+                (uuid,),
+            )
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute(
+                "SELECT id, uuid, log_notes, source, level, internal FROM logger WHERE uuid = ?",
+                (uuid,),
+            )
+        else:
+            raise Exception("Unsupported database connection type")
+        log = cursor.fetchone()
+        if log:
+            return {
+                "log_id": log[0],
+                "uuid": log[1],
+                "log_notes": log[2],
+                "source": log[3],
+                "level": log[4],
+                "internal": log[5],
+            }
+        else:
+            raise HTTPException(status_code=404, detail="UUID not found")
+    finally:
+        cursor.close()
+
+
+def get_next_log_id(db_connection: DatabaseConn) -> int:
+    cursor = db_connection.cursor()
+    try:
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute("SELECT MAX(id) FROM logger")
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute("SELECT MAX(id) FROM logger")
+        else:
+            raise Exception("Unsupported database connection type")
+
+        result = cursor.fetchone()
+        max_id = result[0] if result and result[0] is not None else 0
+        return max_id + 1
+    finally:
+        cursor.close()
+
+
+def get_uuid_by_log_id(db_connection: DatabaseConn, log_id: int) -> str:
+    cursor = db_connection.cursor()
+    try:
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute("SELECT uuid FROM logger WHERE id = %s", (log_id,))
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute("SELECT uuid FROM logger WHERE id = ?", (log_id,))
+        else:
+            raise Exception("Unsupported database connection type")
+
+        uuid = cursor.fetchone()
+        if uuid:
+            return uuid[0] if uuid else ""
+        else:
+            raise HTTPException(status_code=404, detail="Log ID not found")
+    finally:
+        cursor.close()
 
 
 def json_to_string(json_package: Dict[str, str]) -> Detailed_Result:
@@ -614,15 +819,17 @@ def new_log_entry(
     misc: Optional[str] = None,
 ) -> Union[bool, Detailed_Result]:
     db_connection = None
-    #dbinfo = set_env()
-    raw_dbinfo = [os.getenv("LOGGER_MODE", "file"), 
-              os.getenv("LOGGER_DIR", ".logs"), 
-              os.getenv("DATABASE_PATH", ":memory:"), 
-              os.getenv("DATABASE_USER", "root"), 
-              os.getenv("DATABASE_CRED", "password"), 
-              os.getenv("DATABASE_HOST", "localhost"), 
-              int(os.getenv("DATABASE_PORT", 5432)), 
-              os.getenv("DATABASE_NAME", "logger")]
+    # dbinfo = set_env()
+    raw_dbinfo = [
+        os.getenv("LOGGER_MODE", "file"),
+        os.getenv("LOGGER_DIR", ".logs"),
+        os.getenv("DATABASE_PATH", ":memory:"),
+        os.getenv("DATABASE_USER", "root"),
+        os.getenv("DATABASE_CRED", "password"),
+        os.getenv("DATABASE_HOST", "localhost"),
+        int(os.getenv("DATABASE_PORT", 5432)),
+        os.getenv("DATABASE_NAME", "logger"),
+    ]
     dbinfo = {
         "LOGGER_MODE": raw_dbinfo[0],
         "LOGGER_DIR": raw_dbinfo[1],
@@ -633,7 +840,7 @@ def new_log_entry(
         "DATABASE_PORT": raw_dbinfo[6],
         "DATABASE_NAME": raw_dbinfo[7],
     }
-    print (dbinfo)
+    print(dbinfo)
     if dbinfo["LOGGER_MODE"] == "file":
         result = log_to_file(
             (
@@ -947,6 +1154,32 @@ def set_env(
             exit(1)
 
 
+def set_log_to_deleted(db_connection: DatabaseConn, log_id: int, uuid: str):
+    try:
+        if not db_connection:
+            raise HTTPException(
+                status_code=500, detail="Failed to connect to database"
+            )
+        existing_log = get_log_by_uuid(db_connection, uuid)
+        if not existing_log:
+            raise HTTPException(status_code=404, detail="Log entry not found")
+        update_values = {
+            "uuid": uuid,
+            "status": "resolved",
+            "status_notes": existing_log.get("status_notes", ""),
+            "internal": existing_log.get("internal", ""),
+        }
+        update_db_log(db_connection, uuid, **update_values)
+        return {"status": "success", "message": "Log status set to deleted."}
+    except HTTPException as he:
+        return {"status": he.status_code, "message": he.detail}
+    except Exception as e:
+        new_log_entry(e, "Failed to set log to deleted", "CRITICAL")
+        return HTTPException(status_code=500, detail=str(e))
+    finally:
+        close_database(db_connection)
+
+
 def string_validator(string: str, clean: bool = True) -> Detailed_Result:
     try:
         if string is None:
@@ -1070,8 +1303,10 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
 if __name__ == "__main__":
     try:
         load_dotenv(find_dotenv(usecwd=True))
-        
-        parser = argparse.ArgumentParser(description="Logger_X Server by CNB, LLC v1.1.0")
+
+        parser = argparse.ArgumentParser(
+            description="Logger_X Server by CNB, LLC v1.1.0"
+        )
 
         parser.add_argument(
             "-a",
