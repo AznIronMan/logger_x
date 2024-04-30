@@ -60,7 +60,7 @@ function App() {
   }, [apiURL, apiPort, secretKey]);
 
   useEffect(() => {
-    fetchNextLogId();  // Fetch next log ID when the component mounts
+    fetchNextLogId();  
   }, [fetchNextLogId]);
 
   const [firstLogId, setFirstLogId] = useState('');
