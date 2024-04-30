@@ -1,8 +1,10 @@
 # Logger_X Server by Clark & Burke, LLC
 
-- **Version**: v1.1.0
-- **Date**: 04.26.2024 @ 12:29 PM PST
+- **Version**: v1.1.3
+- **Date**: 04.30.2024 @ 09:50 PM PST
 - **Written by**: Geoff Clark of Clark & Burke, LLC
+
+- **README.md Last Updated**: 04.26.2024
 
 Logger_X Server is a comprehensive logging tool designed for robust and flexible logging in Python applications. It supports both file-based and database-based logging, with features for creating, updating, and managing log entries. Additional functionalities include an API listener for receiving log data, and planned features for a console interface and GUI.
 
@@ -25,18 +27,21 @@ cd logger
 ```
 
 (Automated) - Installs Python 3.12 (if needed), creates a virtual environment, installs the required packages, and builds logger_helper launcher.
+
 ```bash
 ./install.sh    # Mac or Linux (be sure to chmod +x)
 ./install.bat   # Windows
 ```
 
 (for first time help use) - Explains how to launch the logger_x.py helper menu.
+
 ```bash
 ./logger_helper.sh  # Mac or Linux (be sure to chmod +x)
 ./logger_helper.bat # Windows
 ```
 
-(Manual) - Installs the required packages. (This assumes you have Python 3.11 or 3.12 *recommended* installed)
+(Manual) - Installs the required packages. (This assumes you have Python 3.11 or 3.12 _recommended_ installed)
+
 ```bash
 pip install -r requirements.txt
 ```
