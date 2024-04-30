@@ -8,6 +8,7 @@ import psycopg2
 import psycopg2.extras
 import socket
 import sqlite3
+import stat
 import sys
 import textwrap
 import traceback
@@ -16,8 +17,9 @@ import uuid
 
 from collections import namedtuple
 from datetime import datetime
-from dotenv import find_dotenv, load_dotenv, set_key
+from dotenv import dotenv_values, find_dotenv, load_dotenv, set_key
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 from rich.logging import RichHandler
 from pydantic import BaseModel, Field
@@ -99,6 +101,14 @@ def api_listener(
 ):
     app = FastAPI()
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allows all origins
+        allow_credentials=True,
+        allow_methods=["*"],  # Allows all methods
+        allow_headers=["*"],  # Allows all headers
+    )
+
     load_dotenv(find_dotenv(usecwd=True))
 
     def verify_secret_key(x_secret_key: str = Header(...)):
@@ -168,6 +178,21 @@ def api_listener(
             exception = HTTPException(status_code=500, detail=str(e))
             new_log_entry(exception=exception, logging_level="CRITICAL")
             return {"status": "failure"}
+
+    @app.get("/firstlogid")
+    async def api_next_log_id(secret_key: str = Depends(verify_secret_key)):
+        try:
+            db_connection = connect_database()
+            first_id = get_first_log_id(db_connection)
+            close_database(db_connection)
+            return {"first_log_id": first_id}
+        except Exception as e:
+            logger_x.error(
+                f"Failed to fetch first log ID: {str(e)}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Failed to fetch first log ID"
+            )
 
     @app.get("/nextlogid")
     async def api_next_log_id(secret_key: str = Depends(verify_secret_key)):
@@ -345,6 +370,17 @@ def build_debug_message(
         return error_message
 
 
+def check_file_permissions(path: str, apply_to_path: str) -> None:
+    root_permissions = os.stat("./").st_mode
+    os.chmod(apply_to_path, root_permissions)
+    if os.path.isdir(apply_to_path):
+        for dirpath, dirnames, filenames in os.walk(apply_to_path):
+            for dn in dirnames:
+                os.chmod(os.path.join(dirpath, dn), root_permissions)
+            for fn in filenames:
+                os.chmod(os.path.join(dirpath, fn), root_permissions)
+
+
 def check_function(
     path: str, create_dir: bool = False, is_directory: bool = True
 ) -> bool:
@@ -359,6 +395,7 @@ def check_function(
     if is_directory:
         if create_dir:
             os.makedirs(path, exist_ok=True)
+            check_file_permissions("./", path)
             return True
         else:
             raise FileNotFoundError(f"Directory {path} does not exist")
@@ -659,6 +696,23 @@ def get_env() -> DBInfo:
     )
 
     return env_info
+
+
+def get_first_log_id(db_connection: DatabaseConn) -> int:
+    cursor = db_connection.cursor()
+    try:
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute("SELECT MIN(id) FROM logger")
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute("SELECT MIN(id) FROM logger")
+        else:
+            raise Exception("Unsupported database connection type")
+
+        result = cursor.fetchone()
+        min_id = result[0] if result and result[0] is not None else 1
+        return min_id
+    finally:
+        cursor.close()
 
 
 def get_log_by_uuid(
@@ -1289,8 +1343,45 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
         return False
 
 
+def webgui_check() -> None:
+    keys_to_check = ["API_PORT", "SECRET_KEY"]
+
+    webgui_path = "./webgui"
+    env_path = os.path.join(webgui_path, ".env")
+    root_env_path = "./.env"
+
+    dir_check(webgui_path)
+
+    if file_exists(root_env_path):
+        root_env = dotenv_values(root_env_path)
+    else:
+        raise FileNotFoundError("Root .env file not found.")
+
+    if not os.path.isfile(env_path):
+        with open(env_path, "w") as f:
+            for key in keys_to_check:
+                if key in root_env:
+                    f.write(f"{key}={root_env[key]}\n")
+        check_file_permissions(
+            root_env_path, env_path
+        )  # Set permissions for new .env file
+    else:
+        env_values = dotenv_values(env_path)
+        for key in keys_to_check:
+            if env_values.get(key) != root_env.get(key):
+                set_key(env_path, key, root_env.get(key) or "")
+        check_file_permissions(root_env_path, env_path)
+
+
 if __name__ == "__main__":
     try:
+        # if not os.path.isfile(".env"):
+        #     raise FileNotFoundError(
+        #         ".env file not found. Please create a .env file."
+        #     )
+        # else:
+        #     webgui_check()
+
         load_dotenv(find_dotenv(usecwd=True))
 
         parser = argparse.ArgumentParser(
@@ -1327,6 +1418,12 @@ if __name__ == "__main__":
             help="SSL config for API listener (json with key, cert)",
             type=json.loads,
         )
+        parser.add_argument(
+            "-n",
+            "--nossl",
+            help="Start API Listener without SSL",
+            action="store_true",
+        )
 
         args = parser.parse_args()
 
@@ -1346,10 +1443,13 @@ if __name__ == "__main__":
                 port = args.port
             else:
                 port = int(os.getenv("API_PORT", 8000))
-            if args.ssl:
-                ssl = args.ssl
-            else:
+            if args.nossl:
                 ssl = None
+            else:
+                if args.ssl:
+                    ssl = args.ssl
+                else:
+                    ssl = None
             api_listener(ip, port, ssl)
         else:
             message = (

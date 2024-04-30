@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 
 import './App.css';
 
 function App() {
   const [formData, setFormData] = useState({
+    log_id: '',
     log_notes: '',
     source: '',
     level: 'INFO',
@@ -12,6 +13,11 @@ function App() {
     misc: '',
     success: true,
   });
+
+  const apiURL = process.env.REACT_APP_API_URL || 'localhost';
+  const apiPort = parseInt(process.env.REACT_APP_API_PORT) || 0;
+  const secretKey = process.env.REACT_APP_SECRET_KEY || null;
+
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -21,10 +27,49 @@ function App() {
     });
   };
 
-  const handleSubmit = async (e) => {
+  const fetchNextLogId = useCallback(async () => {
+    try {
+      const response = await axios.get(`https://${apiURL}:${apiPort}/nextlogid`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Secret-Key': secretKey,
+        }
+      });
+      setFormData((prevFormData) => ({
+        ...prevFormData,
+        log_id: response.data.next_log_id || '',
+      }));
+      console.log(response.data.next_log_id)
+    } catch (error) {
+      console.error('Failed to fetch next log ID:', error);
+    }
+  }, [apiURL, apiPort, secretKey]);
 
-    const apiPort = parseInt(process.env.REACT_APP_API_PORT) || 0;
-    const secretKey = process.env.REACT_APP_SECRET_KEY || null;
+  const fetchFirstLogId = useCallback(async () => {
+    try {
+      const response = await axios.get(`https://${apiURL}:${apiPort}/firstlogid`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Secret-Key': secretKey,
+        }
+      });
+      return response.data.first_log_id;
+    } catch (error) {
+      console.error('Failed to fetch first log ID:', error);
+    }
+  }, [apiURL, apiPort, secretKey]);
+
+  useEffect(() => {
+    fetchNextLogId();  // Fetch next log ID when the component mounts
+  }, [fetchNextLogId]);
+
+  const [firstLogId, setFirstLogId] = useState('');
+
+  useEffect(() => {
+    fetchFirstLogId().then(id => setFirstLogId(id));
+  }, [fetchFirstLogId]);
+
+  const handleSubmit = async (e) => {
 
     e.preventDefault();
     try {
@@ -35,8 +80,6 @@ function App() {
       //   }
       // });
       // console.log('Server Response:', response.data);
-      console.log('apiPort:', apiPort);
-      console.log('secretKey:', secretKey);
       alert('NOT IMPLEMENTED YET!');
     } catch (error) {
       console.error('Error submitting log:', error);
@@ -55,7 +98,7 @@ function App() {
     });
   };
 
-  const [activeButton, setActiveButton] = useState('searchLog');
+  const [activeButton, setActiveButton] = useState('newLog');
 
   return (
     <div className="form-container">
@@ -63,7 +106,10 @@ function App() {
       <div className="top-menu">
         <button 
           className={`top-button new-log ${activeButton === 'newLog' ? 'active' : ''}`} 
-          onClick={() => setActiveButton('newLog')}
+          onClick={() => {
+            setActiveButton('newLog');
+            fetchNextLogId();
+          }}
         >
           New Log
         </button>
@@ -85,9 +131,9 @@ function App() {
       <form onSubmit={handleSubmit} className="log-form">
         <div className="form-row log-id-uuid-container">
           <label>Log ID:</label>
-          <input type="text" name="log_id" className="log-id" readOnly />
-          <button className="log-id-button">←</button>
-          <button className="log-id-button">→</button>
+          <input type="text" name="log_id" className="log-id" value={formData.log_id} readOnly />
+          <button name="previousLog" className="log-id-button" disabled={formData.log_id <= firstLogId}>←</button>
+          <button name="nextLog" className="log-id-button" disabled={formData.log_id === firstLogId}>→</button>
           <label className="uuid-label">UUID:</label>
           <input type="text" name="uuid" className="uuid-input" readOnly />
         </div>

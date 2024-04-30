@@ -204,3 +204,4 @@ logger.db
 logger_help.bat
 logger_help.sh
 
+*.null

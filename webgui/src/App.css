@@ -55,7 +55,8 @@ h1 {
 
 .top-button:disabled {
   color: #a0a0a0;
-  cursor: default;
+  cursor: not-allowed;
+  background-color: #f0f0f0;
 }
 
 .top-button.inactive,
@@ -162,6 +163,27 @@ h1 {
   width: auto;
   flex-grow: 1;
   margin-right: 20px;
+}
+
+.log-id-button {
+  font-size: 16px;
+  padding: 5px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #f8f8f8;
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+.log-id-button:hover:not(:disabled) {
+  background-color: #e0e0e0;
+  border-color: #b0b0b0;
+}
+
+.log-id-button:disabled {
+  color: #d0d0d0;
+  cursor: not-allowed;
+  background-color: #f0f0f0;
+  border-color: #e0e0e0;
 }
 
 .checkbox-container .success-checkbox {
