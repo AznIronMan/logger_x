@@ -17,7 +17,7 @@ import uuid
 from collections import namedtuple
 from datetime import datetime
 from dotenv import find_dotenv, load_dotenv, set_key
-from fastapi import Depends, FastAPI, Header, HTTPException, Path
+from fastapi import Depends, FastAPI, Header, HTTPException
 from rich.console import Console
 from rich.logging import RichHandler
 from pydantic import BaseModel, Field
@@ -25,11 +25,12 @@ from typing import Any, Dict, NewType, Optional, Sequence, Tuple, Union
 
 
 # TODO: Add docstrings to all functions and classes
-# TODO: Add main_console() and main_gui() functions
 # TODO: Implement the create_new_database() function
 # TODO: look at file_exists(), dir_check(), fetch_log_path(), format_datetime(),
 #      get_database_info(), convert_sequence_to_dict(), revert_characters(),
 #      substitute_characters() for use cases or removal
+
+# TODO: add check if webgui folder exists, if so, check for env, if not create env (function)
 
 # Variables and Type Aliases
 
@@ -798,18 +799,6 @@ def log_to_file(
         raise Exception(f"[log_to_file() failed]: {e}")
 
 
-def main_console():
-    # TODO: build console interface for .env configuration, log viewing/updating,
-    # log searching, log exporting, and api listener launcher/management
-    raise NotImplementedError("Console is not implemented yet.")
-
-
-def main_gui():
-    # TODO: build GUI in PyQt6 for .env configuration, log viewing/updating,
-    # log searching, log exporting, and api listener launcher/management
-    raise NotImplementedError("GUI is not implemented yet.")
-
-
 def new_log_entry(
     exception: Optional[Exception] = None,
     logging_msg: Optional[str] = None,
@@ -1320,26 +1309,12 @@ if __name__ == "__main__":
             help="Update a log entry (json with uuid, status, notes, internal).",
             type=json.loads,
         )
-
-        parser.add_argument(
-            "-g",
-            "--gui",
-            help="Launch GUI (no parameters)",
-            action="store_true",
-        )
         parser.add_argument(
             "-l",
             "--listener",
             help="Start API Listener (for custom use args -i -p -s)",
             action="store_true",
         )
-        parser.add_argument(
-            "-c",
-            "--console",
-            help="Launch Console (no parameters)",
-            action="store_true",
-        )
-
         parser.add_argument(
             "-i", "--ip", help="IP/Host for API listener (string)"
         )
@@ -1359,8 +1334,6 @@ if __name__ == "__main__":
             new_log_entry(**args.add)
         elif args.update:
             update_db_log(**args.update)
-        elif args.gui:
-            main_gui()
         elif args.listener:
             ip = "0.0.0.0"
             port = 8000
@@ -1378,8 +1351,6 @@ if __name__ == "__main__":
             else:
                 ssl = None
             api_listener(ip, port, ssl)
-        elif args.console:
-            main_console()
         else:
             message = (
                 "No valid arguments provided. Please configure 'auto' in .env "

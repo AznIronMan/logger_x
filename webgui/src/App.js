@@ -22,16 +22,22 @@ function App() {
   };
 
   const handleSubmit = async (e) => {
+
+    const apiPort = parseInt(process.env.REACT_APP_API_PORT) || 0;
+    const secretKey = process.env.REACT_APP_SECRET_KEY || null;
+
     e.preventDefault();
     try {
-      const response = await axios.post('https://localhost:9199/add', formData, {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Secret-Key': 'YOUR_SECRET_KEY', // Make sure to replace this with your actual secret key
-        }
-      });
-      console.log('Server Response:', response.data);
-      alert('Log submitted successfully');
+      // const response = await axios.post(`https://localhost:${apiPort}/add`, formData, {
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //     'X-Secret-Key': secretKey,
+      //   }
+      // });
+      // console.log('Server Response:', response.data);
+      console.log('apiPort:', apiPort);
+      console.log('secretKey:', secretKey);
+      alert('NOT IMPLEMENTED YET!');
     } catch (error) {
       console.error('Error submitting log:', error);
       alert('Failed to submit log');
