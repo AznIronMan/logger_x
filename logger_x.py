@@ -120,13 +120,15 @@ def api_listener(
         entry: NewDBEntry, secret_key: str = Depends(verify_secret_key)
     ):
         try:
+            determined_level = (
+                entry.level
+                if entry.level is not None
+                else ("ERROR" if not entry.success else "INFO")
+            )
             new_log_entry(
                 logging_msg=entry.log_notes,
-                logging_level=(
-                    entry.level
-                    if entry.level is not None and bool(entry.success)
-                    else "ERROR"
-                ),
+                logging_level=determined_level,
+                source=entry.source,
                 success=(
                     bool(entry.success) if entry.success is not None else False
                 ),
@@ -180,7 +182,7 @@ def api_listener(
             return {"status": "failure"}
 
     @app.get("/firstlogid")
-    async def api_next_log_id(secret_key: str = Depends(verify_secret_key)):
+    async def api_first_log_id(secret_key: str = Depends(verify_secret_key)):
         try:
             db_connection = connect_database()
             first_id = get_first_log_id(db_connection)
@@ -194,19 +196,63 @@ def api_listener(
                 status_code=500, detail="Failed to fetch first log ID"
             )
 
-    @app.get("/nextlogid")
-    async def api_next_log_id(secret_key: str = Depends(verify_secret_key)):
+    @app.get("/newlogid")
+    async def api_new_log_id(secret_key: str = Depends(verify_secret_key)):
         try:
             db_connection = connect_database()
-            next_id = get_next_log_id(db_connection)
+            new_id = get_new_log_id(db_connection)
             close_database(db_connection)
-            return {"next_log_id": next_id}
+            return {"new_log_id": new_id}
+        except Exception as e:
+            logger_x.error(
+                f"Failed to fetch new log ID: {str(e)}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Failed to fetch new log ID"
+            )
+
+    @app.get("/nextlogid/{current_id}")
+    async def api_next_log_id(
+        current_id: int, secret_key: str = Depends(verify_secret_key)
+    ):
+        try:
+            db_connection = connect_database()
+            try:
+                next_id = get_next_log_id(current_id, db_connection)
+                return {"next_log_id": next_id}
+            except ValueError as ve:  # Handle the case where no next ID exists
+                return {"next_log_id": None, "message": str(ve)}
+            finally:
+                close_database(db_connection)
         except Exception as e:
             logger_x.error(
                 f"Failed to fetch next log ID: {str(e)}", exc_info=True
             )
             raise HTTPException(
                 status_code=500, detail="Failed to fetch next log ID"
+            )
+
+    @app.get("/previouslogid/{current_id}")
+    async def api_previous_log_id(
+        current_id: int, secret_key: str = Depends(verify_secret_key)
+    ):
+        try:
+            db_connection = connect_database()
+            try:
+                previous_id = get_previous_log_id(current_id, db_connection)
+                return {"previous_log_id": previous_id}
+            except (
+                ValueError
+            ) as ve:  # Handle the case where no previous ID exists
+                return {"previous_log_id": None, "message": str(ve)}
+            finally:
+                close_database(db_connection)
+        except Exception as e:
+            logger_x.error(
+                f"Failed to fetch previous log ID: {str(e)}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Failed to fetch previous log ID"
             )
 
     @app.get("/uuid/{log_id}")
@@ -243,6 +289,20 @@ def api_listener(
             new_log_entry(exception=exception, logging_level="CRITICAL")
             return {"status": "failure"}
 
+    @app.get("/checkid/{log_id}")
+    async def api_check_log_id(
+        log_id: int, secret_key: str = Depends(verify_secret_key)
+    ):
+        try:
+            db_connection = connect_database()
+            check = check_log_id_exists(db_connection, log_id)
+            close_database(db_connection)
+            return {"exists": check}
+        except Exception as e:
+            exception = HTTPException(status_code=500, detail=str(e))
+            new_log_entry(exception=exception, logging_level="CRITICAL")
+            return {"status": "failure"}
+
     @app.delete("/admindeletelog/{log_id}/{uuid}/")
     async def api_delete_log(
         log_id: int,
@@ -252,11 +312,8 @@ def api_listener(
         try:
             db_connection = connect_database()
             cursor = db_connection.cursor()
-            cursor.execute(
-                "SELECT id FROM logger WHERE id = %s AND uuid = %s",
-                (log_id, uuid),
-            )
-            if not cursor.fetchone():
+
+            if not check_log_id_exists(db_connection, log_id):
                 cursor.close()
                 close_database(db_connection)
                 raise HTTPException(
@@ -283,12 +340,8 @@ def api_listener(
         try:
             db_connection = connect_database()
             cursor = db_connection.cursor()
-            cursor.execute(
-                "SELECT id FROM logger WHERE id = %s AND uuid = %s",
-                (log_id, uuid),
-            )
-            if not cursor.fetchone():
-                console.log("NO:", cursor.fetchone())
+
+            if not check_log_id_exists(db_connection, log_id):
                 cursor.close()
                 close_database(db_connection)
                 raise HTTPException(
@@ -401,6 +454,23 @@ def check_function(
             raise FileNotFoundError(f"Directory {path} does not exist")
     else:
         raise FileNotFoundError(f"File {path} does not exist")
+
+
+def check_log_id_exists(db_connection: DatabaseConn, log_id: int) -> bool:
+    cursor = db_connection.cursor()
+    try:
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute("SELECT id FROM logger WHERE id = %s", (log_id,))
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute("SELECT id FROM logger WHERE id = ?", (log_id,))
+        else:
+            raise Exception("Unsupported database connection type")
+
+        if not cursor.fetchone():
+            return False
+        return True
+    finally:
+        cursor.close()
 
 
 def close_database(connection) -> Optional[bool]:
@@ -598,7 +668,6 @@ def delete_log_admin(
     db_connection: DatabaseConn, log_id: int, uuid: str
 ) -> bool:
     cursor = db_connection.cursor()
-    print(uuid)
     if isinstance(db_connection, PostgresConn):
         cursor.execute(
             "DELETE FROM logger WHERE id = %s AND uuid = %s", (log_id, uuid)
@@ -748,7 +817,7 @@ def get_log_by_uuid(
         cursor.close()
 
 
-def get_next_log_id(db_connection: DatabaseConn) -> int:
+def get_new_log_id(db_connection: DatabaseConn) -> int:
     cursor = db_connection.cursor()
     try:
         if isinstance(db_connection, PostgresConn):
@@ -761,6 +830,52 @@ def get_next_log_id(db_connection: DatabaseConn) -> int:
         result = cursor.fetchone()
         max_id = result[0] if result and result[0] is not None else 0
         return max_id + 1
+    finally:
+        cursor.close()
+
+
+def get_next_log_id(current_id: int, db_connection: DatabaseConn) -> int:
+    cursor = db_connection.cursor()
+    try:
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute(
+                "SELECT MIN(id) FROM logger WHERE id > %s", (current_id,)
+            )
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute(
+                "SELECT MIN(id) FROM logger WHERE id > ?", (current_id,)
+            )
+        else:
+            raise Exception("Unsupported database connection type")
+
+        result = cursor.fetchone()
+        next_id = result[0] if result and result[0] is not None else None
+        if next_id is None:
+            raise ValueError("No next log exists")
+        return next_id
+    finally:
+        cursor.close()
+
+
+def get_previous_log_id(current_id: int, db_connection: DatabaseConn) -> int:
+    cursor = db_connection.cursor()
+    try:
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute(
+                "SELECT MAX(id) FROM logger WHERE id < %s", (current_id,)
+            )
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute(
+                "SELECT MAX(id) FROM logger WHERE id < ?", (current_id,)
+            )
+        else:
+            raise Exception("Unsupported database connection type")
+
+        result = cursor.fetchone()
+        previous_id = result[0] if result and result[0] is not None else None
+        if previous_id is None:
+            raise ValueError("No previous log exists")
+        return previous_id
     finally:
         cursor.close()
 
@@ -856,13 +971,14 @@ def log_to_file(
 def new_log_entry(
     exception: Optional[Exception] = None,
     logging_msg: Optional[str] = None,
-    logging_level: str = "ERROR",
+    logging_level: Optional[str] = None,
+    source: Optional[str] = None,
+    status: Optional[str] = "new",
     success: bool = False,
     console: bool = False,
     misc: Optional[str] = None,
 ) -> Union[bool, Detailed_Result]:
     db_connection = None
-    # dbinfo = set_env()
     raw_dbinfo = [
         os.getenv("LOGGER_MODE", "file"),
         os.getenv("LOGGER_DIR", ".logs"),
@@ -883,7 +999,21 @@ def new_log_entry(
         "DATABASE_PORT": raw_dbinfo[6],
         "DATABASE_NAME": raw_dbinfo[7],
     }
-    print(dbinfo)
+    if logging_level is None:
+        logging_level = "ERROR" if exception else "INFO"
+    if source is None:
+        source = socket.getfqdn().lower()
+    if (logging_level in ["INFO", "SUCCESS", "DEBUG"]) or (success):
+        misc = misc if misc and len(misc) > 0 else None
+    else:
+        if misc and len(misc) > 0 and exception and str(exception).strip():
+            misc = f"{misc}. Exception: {exception}"
+        elif not misc and exception and str(exception).strip():
+            misc = f"Exception: {exception}"
+        elif misc and not (exception and str(exception).strip()):
+            misc = f"{misc}. No exception provided."
+        else:
+            misc = f"No exception provided." if not misc else misc
     if dbinfo["LOGGER_MODE"] == "file":
         result = log_to_file(
             (
@@ -920,14 +1050,16 @@ def new_log_entry(
                     return " -> called from -> ".join(formatted_trace[::-1])
 
                 if exception is None:
-                    misc = "No exception provided." + (
-                        " " + misc if misc else ""
-                    )
+                    misc = f"{misc}" if misc else None
                     complete_package = {
                         "level": logging_level,
-                        "source": f"[{socket.getfqdn().lower()}]",
+                        "source": (
+                            f"[{source.lower()}]"
+                            if source
+                            else f"[{socket.getfqdn().lower()}]"
+                        ),
                         "log_notes": logging_msg,
-                        "status": "new",
+                        "status": status.lower() if status else "new",
                         "internal": {
                             key: value
                             for key, value in {
@@ -969,9 +1101,13 @@ def new_log_entry(
             else:
                 complete_package = {
                     "level": "SUCCESS",
-                    "source": f"[{socket.getfqdn().lower()}]",
+                    "source": (
+                        f"[{source.lower()}]"
+                        if source
+                        else f"[{socket.getfqdn().lower()}]"
+                    ),
                     "log_notes": logging_msg,
-                    "status": "new",
+                    "status": status.lower() if status else "new",
                     "internal": {
                         key: value
                         for key, value in {

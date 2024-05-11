@@ -16,6 +16,16 @@
   background-color: lightgrey;
 }
 
+.form-row .check-row {
+  justify-content: center;
+  gap: 5px;
+}
+
+.form-row {
+  display: flex;
+  margin-bottom: 10px;
+}
+
 /* Header */
 
 h1 {
@@ -23,7 +33,6 @@ h1 {
   font-style: normal;
   font-size: 48px;
   text-align: center;
-  margin-bottom: 20px;
 }
 
 /* Top Button Section */
@@ -34,7 +43,7 @@ h1 {
   justify-content: stretch;
 }
 
-.top-button {
+.button-obj {
   background-color: #f0f0f0;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -45,33 +54,59 @@ h1 {
   transition: background-color 0.3s ease;
 }
 
-.top-menu .top-button {
+.log-form .buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.buttons button {
   flex-grow: 1;
+  font-weight: bold;
+  background-color: #f8f8f8;
+  cursor: pointer;
+} 
+
+.button-obj {
+  flex-grow: 1;
+  font-family: "Nothing You Could Do", cursive;
+  font-size: 24px;
 }
 
-.top-button:hover:not(:disabled) {
+.log-form button:hover:not(:disabled),
+.button-obj:hover:not(:disabled) {
   background-color: #e0e0e0;
+  border-color: lightgrey
 }
 
-.top-button:disabled {
+.log-form button:disabled,
+.button-obj:disabled {
   color: #a0a0a0;
-  cursor: not-allowed;
   background-color: #f0f0f0;
 }
 
-.top-button.inactive,
-.top-button.active {
-  border-color: #ccc;
+.form-container input:disabled, 
+.form-container select:disabled,
+.form-container textarea:disabled,
+.form-container button:disabled {
+  cursor: not-allowed;
 }
 
-.top-button.new-log.inactive {
-  background-color: #fff;
+.button-obj.inactive,
+.button-obj.active {
   border-width: 2px;
-  color: #200000;
 }
 
-.top-button.search-log.active {
+.button-obj.inactive {
+  font-weight: lighter;
+  background-color: #fff;
+  border-color: lightgrey;
+  color: lightgrey;
+}
+
+.button-obj.active {
   font-weight: bold;
+  border-color: black;
   color: #000;
 }
 
@@ -94,22 +129,18 @@ h1 {
 }
 
 .log-form .log-id-uuid-container {
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
   gap: 10px;
-  margin-right: 20px;
-  flex-wrap: nowrap;
 }
 
 .log-form input[type="text"],
 .log-form .uuid-input {
+  width: 100%;
   flex-grow: 1;
 }
 
 .log-form input[type="text"] {
   width: 95%; 
-  height: 35px;
+  height: 16px;
 }
 
 .log-form input[type="text"].log-id {
@@ -126,30 +157,28 @@ h1 {
 .log-form label,
 .log-form .uuid-label {
   white-space: nowrap;
+  margin-top: 5px;
   margin-bottom: 5px;
 }
 
+
 .log-form .uuid-input {
   flex-grow: 1;
-  margin-left: 5px;
 }
 
 .log-form .log-id-uuid-container,
 .level-dropdown-container,
 .checkbox-container {
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 5px;
-}
-
-.log-form .log-id-uuid-container {
-  justify-content: space-between;
-  margin-right: 20px;
+  flex-wrap: nowrap;
 }
 
 .log-form .log-id-button,
 .log-form .uuid-label,
 .log-form select.level-select,
+.log-form select.status-select,
 .log-form .uuid-input {
   margin-left: 5px;
 }
@@ -159,55 +188,16 @@ h1 {
   margin-left: -1px;
 }
 
-.log-form select.level-select {
-  width: auto;
-  flex-grow: 1;
-  margin-right: 20px;
-}
-
-.log-id-button {
-  font-size: 16px;
-  padding: 5px 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background-color: #f8f8f8;
-  transition: background-color 0.3s, border-color 0.3s;
-}
-
-.log-id-button:hover:not(:disabled) {
-  background-color: #e0e0e0;
-  border-color: #b0b0b0;
-}
-
-.log-id-button:disabled {
-  color: #d0d0d0;
-  cursor: not-allowed;
-  background-color: #f0f0f0;
-  border-color: #e0e0e0;
+.log-form select.level-select,
+.log-form select.status-select {
+  width: 100%;
+  flex-grow: 0;
+  
 }
 
 .checkbox-container .success-checkbox {
   margin-left: 20px;
 }
-
-.log-form .buttons {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 50px;
-  gap: 10px;
-}
-
-.log-form button {
-  flex-grow: 1;
-  font-weight: bold;
-  background-color: #f8f8f8;
-  cursor: pointer;
-}
-
-.log-form button:hover {
-  background-color: #e2e2e2;
-}
-
 
 @media (max-width: 768px) {
   .form-container {
