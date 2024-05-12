@@ -3,7 +3,22 @@ import axios from "axios";
 
 import "./App.css";
 
+const debugMode = true; // Set to true to enable console logging
+
+// TODO: need to make sure that logid is fetched on update in fastapi side!
+
 function App() {
+  // states
+  const [buttonsActive, setButtonsActive] = useState({
+    newLog: true,
+    submitForm: true,
+    clearForm: true,
+    updateLog: false,
+    deleteLog: false,
+  });
+
+  const [firstLogId, setFirstLogId] = useState("");
+
   const [formData, setFormData] = useState({
     log_id: "",
     log_notes: "",
@@ -15,13 +30,22 @@ function App() {
     admin_delete: false,
   });
 
+  const [isFormLocked, setIsFormLocked] = useState(false);
+
+  const [isUpdateMode, setIsUpdateMode] = useState(false);
+
+  const [hasNext, setHasNext] = useState(true);
+
+  const [hasPrevious, setHasPrevious] = useState(false);
+
   // TODO: Convert console to a log and/or alerts or notification on the webgui
 
+  // import env variables
   const apiURL = process.env.REACT_APP_API_URL || "localhost";
   const apiPort = parseInt(process.env.REACT_APP_API_PORT) || 0;
   const secretKey = process.env.REACT_APP_SECRET_KEY || null;
-  const debugMode = false;
 
+  // functions
   const checkLogIdExists = useCallback(
     async (logId) => {
       if (!logId) {
@@ -59,7 +83,7 @@ function App() {
         return false;
       }
     },
-    [apiURL, apiPort, secretKey, debugMode]
+    [apiURL, apiPort, secretKey]
   );
 
   const checkSubmission = useCallback((notes, source, level, status) => {
@@ -82,6 +106,7 @@ function App() {
       misc: "",
       admin_delete: false,
     });
+    setIsFormLocked(false);
   }, []);
 
   const fetchNewLogId = useCallback(async () => {
@@ -108,10 +133,11 @@ function App() {
       }));
       setHasNext(false); // No next log ID expected after a new log entry
       checkLogIdExists(response.data.new_log_id);
+      setIsFormLocked(false);
     } catch (error) {
       if (debugMode) console.error("Failed to fetch new log ID:", error);
     }
-  }, [apiURL, apiPort, secretKey, debugMode, checkLogIdExists]);
+  }, [apiURL, apiPort, secretKey, checkLogIdExists, setIsFormLocked]);
 
   const fetchFirstLogId = useCallback(async () => {
     try {
@@ -128,11 +154,7 @@ function App() {
     } catch (error) {
       if (debugMode) console.error("Failed to fetch first log ID:", error);
     }
-  }, [apiURL, apiPort, secretKey, debugMode]);
-
-  useEffect(() => {
-    fetchNewLogId();
-  }, [fetchNewLogId]);
+  }, [apiURL, apiPort, secretKey]);
 
   const fetchNextLogId = useCallback(async () => {
     try {
@@ -145,23 +167,45 @@ function App() {
           },
         }
       );
-      if (response.data.next_log_id !== null) {
-        setFormData((prevFormData) => ({
-          ...prevFormData,
-          log_id: response.data.next_log_id,
-        }));
-        setHasNext(true);
+      const nextLogId = response.data.next_log_id;
+      if (nextLogId !== null) {
+        const uuidResponse = await axios.get(
+          `https://${apiURL}:${apiPort}/uuid/${nextLogId}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "X-Secret-Key": secretKey,
+            },
+          }
+        );
+        const logResponse = await axios.get(
+          `https://${apiURL}:${apiPort}/getlog/${uuidResponse.data.uuid}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "X-Secret-Key": secretKey,
+            },
+          }
+        );
+        setFormData({
+          log_id: nextLogId || "",
+          uuid: uuidResponse.data.uuid || "",
+          log_notes: logResponse.data.log_notes || "",
+          source: logResponse.data.source || "",
+          level: logResponse.data.level || "INFO",
+          status: logResponse.data.status || "new",
+          misc: logResponse.data.internal.misc || "",
+        });
+        setIsFormLocked(true);
       } else {
-        setHasNext(false); // No next log ID available, disable the button
+        setHasNext(false);
       }
     } catch (error) {
       if (debugMode) console.error("Failed to fetch next log ID:", error);
       alert("Failed to fetch next log ID.");
       setHasNext(false);
     }
-  }, [apiURL, apiPort, secretKey, debugMode, formData.log_id]);
-
-  const [hasNext, setHasNext] = useState(true);
+  }, [apiURL, apiPort, secretKey, formData.log_id]);
 
   const fetchPreviousLogId = useCallback(async () => {
     try {
@@ -174,17 +218,39 @@ function App() {
           },
         }
       );
-      if (response.data.previous_log_id !== null) {
-        setFormData((prevFormData) => ({
-          ...prevFormData,
-          log_id: response.data.previous_log_id,
-        }));
-        // After setting the previous log ID, check if there's a next log ID from this point
-        await checkLogIdExists(response.data.previous_log_id + 1).then(
-          (exists) => {
-            setHasNext(exists);
+      const previousLogId = response.data.previous_log_id;
+      if (previousLogId !== null) {
+        const uuidResponse = await axios.get(
+          `https://${apiURL}:${apiPort}/uuid/${previousLogId}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "X-Secret-Key": secretKey,
+            },
           }
         );
+        const logResponse = await axios.get(
+          `https://${apiURL}:${apiPort}/getlog/${uuidResponse.data.uuid}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "X-Secret-Key": secretKey,
+            },
+          }
+        );
+        setFormData({
+          log_id: previousLogId || "",
+          uuid: uuidResponse.data.uuid || "",
+          log_notes: logResponse.data.log_notes || "",
+          source: logResponse.data.source || "",
+          level: logResponse.data.level || "INFO",
+          status: logResponse.data.status || "new",
+          misc: logResponse.data.internal.misc || "",
+        });
+        setHasPrevious(true);
+        setIsFormLocked(true);
+        const exists = await checkLogIdExists(previousLogId);
+        setHasNext(exists);
       } else {
         setHasPrevious(false);
       }
@@ -193,29 +259,141 @@ function App() {
       alert("Failed to fetch previous log ID.");
       setHasPrevious(false);
     }
-  }, [
-    apiURL,
-    apiPort,
-    secretKey,
-    debugMode,
-    formData.log_id,
-    checkLogIdExists,
-  ]);
+  }, [apiURL, apiPort, secretKey, formData.log_id, checkLogIdExists]);
 
-  const [hasPrevious, setHasPrevious] = useState(false);
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    const newValue = type === "checkbox" ? checked : value || "";
+    setFormData((prev) => ({
+      ...prev,
+      [name]: newValue,
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    // Check for valid form submission
+    const submissionCheck = checkSubmission(
+      formData.log_notes,
+      formData.source,
+      formData.level,
+      formData.status
+    );
+    if (submissionCheck !== true) {
+      alert(
+        "Please complete the required fields: " + submissionCheck.join(", ")
+      );
+      return;
+    }
+
+    // Clean form data
+    formData.log_notes = stripInvalidCharacters(formData.log_notes);
+    formData.source = stripInvalidCharacters(formData.source);
+    if (formData.misc) {
+      formData.misc = stripInvalidCharacters(formData.misc);
+    }
+
+    if (debugMode) console.log(formData);
+
+    // Determine the endpoint based on update or add mode
+    const endpoint = isUpdateMode ? `/update/${formData.uuid}` : `/add`;
+
+    // Configure the request to the server
+    try {
+      const response = await axios({
+        method: "post", // Use 'post' for both adding and updating
+        url: `https://${apiURL}:${apiPort}${endpoint}`,
+        data: formData, // Unified data structure for both operations
+        headers: {
+          "Content-Type": "application/json",
+          "X-Secret-Key": secretKey,
+        },
+      });
+
+      // Log the server response in debug mode
+      if (debugMode) console.log("Server Response:", response.data);
+
+      // Handle response from server
+      if (response.data.status === "success") {
+        alert(
+          isUpdateMode
+            ? "Record updated successfully!"
+            : "Log submitted successfully!"
+        );
+        clearForm();
+        if (!isUpdateMode) {
+          fetchNewLogId();
+        }
+      } else {
+        alert("Failed to submit log: " + response.data.message);
+      }
+    } catch (error) {
+      if (debugMode) console.error("Error submitting log:", error);
+      alert("Failed to submit log: " + error.message);
+    }
+  };
+
+  const handleUpdateLogClick = async () => {
+    setIsUpdateMode(true);
+    setButtonsActive({
+      newLog: false,
+      submitForm: true,
+      clearForm: true,
+      updateLog: false,
+      deleteLog: false,
+      previousLog: false,
+      nextLog: false,
+    });
+  };
+
+  const handleClear = async () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to clear the form?"
+    );
+
+    if (!confirmed) {
+      return;
+    } else {
+      if (isUpdateMode) {
+        // Logic to revert any unsaved changes, if necessary
+        setIsUpdateMode(false);
+      } else {
+        // Existing clear form logic here
+      }
+      setButtonsActive({
+        newLog: true,
+        submitForm: true,
+        clearForm: true,
+        updateLog: false,
+        deleteLog: false,
+      });
+      clearForm();
+      fetchNewLogId();
+      if (debugMode) console.log("Form cleared");
+    }
+  };
+
+  const stripInvalidCharacters = (input) => {
+    return input.replace(/[^a-zA-Z0-9 \-.,#]/g, "");
+  };
+
+  const toggleButton = (buttonKey) => {
+    setButtonsActive((prev) => ({ ...prev, [buttonKey]: !prev[buttonKey] }));
+  };
+
+  // useEffects
+  useEffect(() => {
+    clearForm();
+  }, [clearForm]);
+
+  useEffect(() => {
+    fetchFirstLogId().then((id) => setFirstLogId(id));
+  }, [fetchFirstLogId]);
 
   useEffect(() => {
     fetchNewLogId();
   }, [fetchNewLogId]);
-
-  useEffect(() => {
-    if (formData.log_id) {
-      checkLogIdExists(formData.log_id).then((exists) => {
-        setHasNext(exists);
-        setHasPrevious(formData.log_id > 1 && exists);
-      });
-    }
-  }, [formData.log_id, checkLogIdExists]);
 
   useEffect(() => {
     if (formData.log_id) {
@@ -238,100 +416,25 @@ function App() {
         setHasNext(exists);
       });
     }
-  }, [formData.log_id, checkLogIdExists, debugMode]);
-
-  const [firstLogId, setFirstLogId] = useState("");
+  }, [formData.log_id, checkLogIdExists]);
 
   useEffect(() => {
-    fetchFirstLogId().then((id) => setFirstLogId(id));
-  }, [fetchFirstLogId]);
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === "checkbox" ? checked : value,
-    });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    const submissionCheck = checkSubmission(
-      formData.log_notes,
-      formData.source,
-      formData.level,
-      formData.status
-    );
-    if (submissionCheck !== true) {
-      alert(
-        "Please complete the required fields: " + submissionCheck.join(", ")
-      );
-      return;
-    }
-    formData.log_notes = stripInvalidCharacters(formData.log_notes);
-    formData.source = stripInvalidCharacters(formData.source);
-    if (formData.misc) {
-      formData.misc = stripInvalidCharacters(formData.misc);
-    }
-
-    if (debugMode) console.log(formData);
-
-    try {
-      const response = await axios.post(
-        `https://${apiURL}:${apiPort}/add`,
-        formData,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "X-Secret-Key": secretKey,
-          },
-        }
-      );
-      if (debugMode) console.log("Server Response:", response.data);
-      if (response.data.status === "success") {
-        alert("Log submitted successfully!");
-        clearForm();
-        fetchNewLogId();
-      } else {
-        alert("Failed to submit log: " + response.data.message);
+    const originalWarn = console.warn.bind(console.warn);
+    console.warn = (message) => {
+      if (
+        message.includes(
+          "A component is changing a controlled input of type undefined to be uncontrolled"
+        )
+      ) {
+        return;
       }
-    } catch (error) {
-      if (debugMode) console.error("Error submitting log:", error);
-      alert("Failed to submit log: " + error.message);
-    }
-  };
+      originalWarn(message);
+    };
 
-  const handleClear = async () => {
-    const confirmed = window.confirm(
-      "Are you sure you want to clear the form?"
-    );
+    return () => (console.warn = originalWarn);
+  }, []);
 
-    if (!confirmed) {
-      return;
-    } else {
-      clearForm();
-      fetchNewLogId();
-      if (debugMode) console.log("Form cleared");
-    }
-  };
-
-  const [buttonsActive, setButtonsActive] = useState({
-    newLog: true,
-    submitForm: true,
-    clearForm: true,
-    updateLog: false,
-    deleteLog: false,
-  });
-
-  const stripInvalidCharacters = (input) => {
-    return input.replace(/[^a-zA-Z0-9 \-.,#]/g, "");
-  };
-
-  const toggleButton = (buttonKey) => {
-    setButtonsActive((prev) => ({ ...prev, [buttonKey]: !prev[buttonKey] }));
-  };
-
+  // render
   return (
     <div className="form-container">
       <h1>LoggerX Entry Form</h1>
@@ -342,6 +445,7 @@ function App() {
           onClick={() => {
             // toggleButton('newLog');
             fetchNewLogId();
+            setIsFormLocked(false);
           }}
         >
           New Log
@@ -350,8 +454,7 @@ function App() {
           disabled={buttonsActive.updateLog ? false : true}
           className={`button-obj update-log ${buttonsActive.updateLog ? "active" : "inactive"}`}
           onClick={() => {
-            console.log("Update Log Pressed");
-            // toggleButton('updateLog')
+            handleUpdateLogClick();
           }}
         >
           Update Log
@@ -380,10 +483,11 @@ function App() {
           <button
             name="previousLog"
             className={`button-obj previous-log ${!hasPrevious ? "inactive" : "active"}`}
-            disabled={!hasPrevious}
+            disabled={
+              !hasPrevious || (isUpdateMode && !buttonsActive.previousLog)
+            }
             type="button"
             onClick={() => {
-              if (debugMode) console.log("Previous Log Pressed");
               fetchPreviousLogId();
             }}
           >
@@ -392,10 +496,9 @@ function App() {
           <button
             name="nextLog"
             className={`button-obj next-log ${hasNext ? "active" : "inactive"}`}
-            disabled={!hasNext}
+            disabled={!hasNext || (isUpdateMode && !buttonsActive.nextLog)}
             type="button"
             onClick={() => {
-              if (debugMode) console.log("Next Log Pressed");
               fetchNextLogId();
             }}
           >
@@ -408,7 +511,7 @@ function App() {
             className="uuid-input"
             value={formData.uuid}
             readOnly
-            disabled={buttonsActive.newLog ? true : false}
+            disabled={buttonsActive.updateLog ? false : true}
           />
         </div>
         <div className="form-row">
@@ -416,7 +519,9 @@ function App() {
           <textarea
             name="log_notes"
             value={formData.log_notes}
+            readOnly={isFormLocked && !isUpdateMode}
             onChange={handleChange}
+            className={isUpdateMode ? "update-mode" : ""}
           />
         </div>
         <div className="form-row">
@@ -425,15 +530,18 @@ function App() {
             type="text"
             name="source"
             value={formData.source}
+            readOnly={isFormLocked && !isUpdateMode}
             onChange={handleChange}
+            className={isUpdateMode ? "update-mode" : ""}
           />
         </div>
         <div className="form-row level-dropdown-container">
           <label>Status:</label>
           <select
             name="status"
-            className="status-select"
+            className={`status-select ${isUpdateMode ? "update-mode" : ""}`}
             value={formData.status}
+            disabled={isFormLocked && !isUpdateMode}
             onChange={handleChange}
           >
             <option value="new">NEW</option>
@@ -446,8 +554,9 @@ function App() {
           <label>&nbsp;&nbsp;&nbsp;Level:</label>
           <select
             name="level"
-            className="level-select"
+            className={`level-select ${isUpdateMode ? "update-mode" : ""}`}
             value={formData.level}
+            disabled={isFormLocked && !isUpdateMode}
             onChange={handleChange}
           >
             <option value="INFO">INFO</option>
@@ -460,7 +569,13 @@ function App() {
         </div>
         <div className="form-row">
           <label>Misc Notes:</label>
-          <textarea name="misc" value={formData.misc} onChange={handleChange} />
+          <textarea
+            name="misc"
+            value={formData.misc}
+            readOnly={isFormLocked && !isUpdateMode}
+            onChange={handleChange}
+            className={isUpdateMode ? "update-mode" : ""}
+          />
         </div>
         <div className="check-row checkbox-container">
           <label hidden={!buttonsActive.deleteLog}>Admin Delete:</label>
@@ -468,7 +583,7 @@ function App() {
             type="checkbox"
             className="admin-delete-checkbox"
             name="admin_delete"
-            checked={formData.admin_delete}
+            checked={!!!formData.admin_delete}
             onChange={handleChange}
             hidden={!buttonsActive.deleteLog}
           />
@@ -477,19 +592,18 @@ function App() {
         <div className="form-row" />
         <div className="buttons">
           <button
-            disabled={buttonsActive.submitForm ? false : true}
+            disabled={!buttonsActive.submitForm}
             className={`button-obj submit-form ${buttonsActive.submitForm ? "active" : "inactive"}`}
-            type="submit"
           >
-            Submit
+            {isUpdateMode ? "Update Record" : "Submit"}
           </button>
           <button
-            disabled={buttonsActive.clearForm ? false : true}
+            disabled={!buttonsActive.clearForm}
             className={`button-obj clear-form ${buttonsActive.clearForm ? "active" : "inactive"}`}
-            type="button"
             onClick={handleClear}
+            type="button"
           >
-            Clear Form
+            {isUpdateMode ? "Cancel" : "Clear Form"}
           </button>
         </div>
       </form>

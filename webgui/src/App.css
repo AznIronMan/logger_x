@@ -195,6 +195,10 @@ h1 {
   
 }
 
+.log-form .update-mode {
+  border: 2px solid red;
+}
+
 .checkbox-container .success-checkbox {
   margin-left: 20px;
 }

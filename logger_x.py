@@ -140,6 +140,32 @@ def api_listener(
             new_log_entry(exception=exception, logging_level="CRITICAL")
             return {"status": "failure"}
 
+    @app.post("/update/{entry_uuid}")
+    async def api_update_entry_by_uuid(
+        entry_uuid: str,
+        entry: NewDBEntry,
+        secret_key: str = Depends(verify_secret_key),
+    ):
+        try:
+            determined_level = (
+                entry.level
+                if entry.level is not None
+                else ("ERROR" if not entry.success else "INFO")
+            )
+            result = update_db_log_by_uuid(
+                uuid=entry_uuid,
+                logging_msg=entry.log_notes,
+                logging_level=determined_level,
+                source=entry.source,
+                status=(entry.status if entry.status is not None else "new"),
+                misc=entry.misc,
+            )
+            return {"status": "success" if result else "failure"}
+        except Exception as e:
+            exception = HTTPException(status_code=500, detail=str(e))
+            new_log_entry(exception=exception, logging_level="CRITICAL")
+            return {"status": "failure"}
+
     @app.post("/update/")
     async def api_update_entry(
         entry: UpdateDBLog, secret_key: str = Depends(verify_secret_key)
@@ -1476,6 +1502,82 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
             internal=logging_data,
         )
         new_log_entry(e, logging_info, exception_error_level)
+        return False
+
+
+def update_db_log_by_uuid(
+    uuid: str,
+    logging_msg: Optional[str],
+    logging_level: Optional[str],
+    source: Optional[str],
+    status: Optional[str],
+    misc: Optional[str],
+) -> bool:
+    """
+    Update an existing log entry in the database logger.
+    """
+    db_connection = None
+    cursor = None
+    try:
+        db_connection = connect_database()
+        cursor = db_connection.cursor()
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute(
+                """
+                UPDATE logger
+                SET level = %s, source = %s, log_notes = %s, status = %s, internal = %s
+                WHERE uuid = %s
+                """,
+                (
+                    logging_level,
+                    source,
+                    logging_msg,
+                    status,
+                    misc,
+                    uuid,
+                ),
+            )
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute(
+                """
+                UPDATE logger
+                SET level = ?, source = ?, log_notes = ?, status = ?, internal = ?
+                WHERE uuid = ?
+                """,
+                (
+                    logging_level,
+                    source,
+                    logging_msg,
+                    status,
+                    misc,
+                    uuid,
+                ),
+            )
+
+        else:
+            raise Exception(
+                f"Invalid database mode: {os.environ['LOGGER_MODE']}"
+            )
+        db_connection.commit()
+        cursor.close() if cursor else None
+        close_database(db_connection) if db_connection else None
+        return True
+    except Exception as e:
+        cursor.close() if cursor else None
+        close_database(db_connection) if db_connection else None
+        error_message = build_debug_message(
+            level=logging_level,
+            log_notes=logging_msg,
+            source=source,
+            status=status,
+            internal=misc,
+        )
+        logger_x.critical(
+            f"[update_database_log({type(db_connection)}) failed]\n"
+            f"[uuid]:{uuid}\n"
+            f"[Exception]:{e}\n\n"
+            f"[Detailed Info]:\n{error_message}"
+        )
         return False
 
 
