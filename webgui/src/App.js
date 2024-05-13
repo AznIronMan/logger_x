@@ -5,9 +5,40 @@ import "./App.css";
 
 const debugMode = true; // Set to true to enable console logging
 
-// TODO: need to make sure that logid is fetched on update in fastapi side!
+// TODO: Implement the delete log functionality
+// TODO: Implement the admin delete function
+// TODO: add search bar option to search id, date, text dynamically
 
 function App() {
+  // top-level functions
+  const militaryTime = process.env.REACT_APP_MILITARY_TIME || false;
+
+  const getFormattedDate = useCallback(() => {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
+    const hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    const seconds = date.getSeconds().toString().padStart(2, "0");
+
+    const hourDisplay = militaryTime
+      ? hours.toString().padStart(2, "0")
+      : (hours % 12 || 12).toString().padStart(2, "0");
+    const amPm = hours >= 12 ? "PM" : "AM";
+
+    const formattedDate = `${year}-${month}-${day} ${hourDisplay}:${minutes}:${seconds}${militaryTime ? "" : " " + amPm}`;
+    return formattedDate;
+  }, [militaryTime]);
+
+  function safelyParseJSON(json) {
+    try {
+      return JSON.parse(json);
+    } catch (e) {
+      return null;
+    }
+  }
+
   // states
   const [buttonsActive, setButtonsActive] = useState({
     newLog: true,
@@ -27,6 +58,8 @@ function App() {
     level: "INFO",
     status: "new",
     misc: "",
+    log_date: getFormattedDate(),
+    last_updated: "",
     admin_delete: false,
   });
 
@@ -104,13 +137,17 @@ function App() {
       level: "INFO",
       status: "new",
       misc: "",
+      log_date: getFormattedDate(),
+      last_updated: "",
       admin_delete: false,
     });
     setIsFormLocked(false);
-  }, []);
+    setIsUpdateMode(false);
+  }, [getFormattedDate]);
 
   const fetchNewLogId = useCallback(async () => {
     try {
+      setIsUpdateMode(false);
       const response = await axios.get(
         `https://${apiURL}:${apiPort}/newlogid`,
         {
@@ -129,15 +166,24 @@ function App() {
         level: "INFO",
         status: "new",
         misc: "",
+        log_date: getFormattedDate(),
+        last_updated: "",
         admin_delete: false,
       }));
-      setHasNext(false); // No next log ID expected after a new log entry
+      setHasNext(false);
       checkLogIdExists(response.data.new_log_id);
       setIsFormLocked(false);
     } catch (error) {
       if (debugMode) console.error("Failed to fetch new log ID:", error);
     }
-  }, [apiURL, apiPort, secretKey, checkLogIdExists, setIsFormLocked]);
+  }, [
+    apiURL,
+    apiPort,
+    secretKey,
+    checkLogIdExists,
+    setIsFormLocked,
+    getFormattedDate,
+  ]);
 
   const fetchFirstLogId = useCallback(async () => {
     try {
@@ -194,7 +240,13 @@ function App() {
           source: logResponse.data.source || "",
           level: logResponse.data.level || "INFO",
           status: logResponse.data.status || "new",
-          misc: logResponse.data.internal.misc || "",
+          misc: safelyParseJSON(logResponse.data.internal)?.misc || "",
+          log_date: formatDateTime(logResponse.data.datetime) || "",
+          last_updated:
+            (formatDateTime(logResponse.data.last_updated) || "") ===
+            "Invalid Date"
+              ? ""
+              : formatDateTime(logResponse.data.last_updated),
         });
         setIsFormLocked(true);
       } else {
@@ -245,7 +297,13 @@ function App() {
           source: logResponse.data.source || "",
           level: logResponse.data.level || "INFO",
           status: logResponse.data.status || "new",
-          misc: logResponse.data.internal.misc || "",
+          misc: safelyParseJSON(logResponse.data.internal)?.misc || "",
+          log_date: formatDateTime(logResponse.data.datetime) || "",
+          last_updated:
+            (formatDateTime(logResponse.data.last_updated) || "") ===
+            "Invalid Date"
+              ? ""
+              : formatDateTime(logResponse.data.last_updated),
         });
         setHasPrevious(true);
         setIsFormLocked(true);
@@ -261,6 +319,35 @@ function App() {
     }
   }, [apiURL, apiPort, secretKey, formData.log_id, checkLogIdExists]);
 
+  function formatDateTime(isoDateString) {
+    const date = new Date(isoDateString);
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+
+    const [
+      { value: month },
+      ,
+      { value: day },
+      ,
+      { value: year },
+      ,
+      { value: hour },
+      ,
+      { value: minute },
+      ,
+      { value: second },
+    ] = formatter.formatToParts(date);
+
+    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+  }
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     const newValue = type === "checkbox" ? checked : value || "";
@@ -273,7 +360,6 @@ function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Check for valid form submission
     const submissionCheck = checkSubmission(
       formData.log_notes,
       formData.source,
@@ -287,7 +373,6 @@ function App() {
       return;
     }
 
-    // Clean form data
     formData.log_notes = stripInvalidCharacters(formData.log_notes);
     formData.source = stripInvalidCharacters(formData.source);
     if (formData.misc) {
@@ -296,25 +381,20 @@ function App() {
 
     if (debugMode) console.log(formData);
 
-    // Determine the endpoint based on update or add mode
     const endpoint = isUpdateMode ? `/update/${formData.uuid}` : `/add`;
 
-    // Configure the request to the server
     try {
       const response = await axios({
-        method: "post", // Use 'post' for both adding and updating
+        method: "post",
         url: `https://${apiURL}:${apiPort}${endpoint}`,
-        data: formData, // Unified data structure for both operations
+        data: formData,
         headers: {
           "Content-Type": "application/json",
           "X-Secret-Key": secretKey,
         },
       });
 
-      // Log the server response in debug mode
       if (debugMode) console.log("Server Response:", response.data);
-
-      // Handle response from server
       if (response.data.status === "success") {
         alert(
           isUpdateMode
@@ -322,9 +402,7 @@ function App() {
             : "Log submitted successfully!"
         );
         clearForm();
-        if (!isUpdateMode) {
-          fetchNewLogId();
-        }
+        fetchNewLogId();
       } else {
         alert("Failed to submit log: " + response.data.message);
       }
@@ -356,7 +434,6 @@ function App() {
       return;
     } else {
       if (isUpdateMode) {
-        // Logic to revert any unsaved changes, if necessary
         setIsUpdateMode(false);
       } else {
         // Existing clear form logic here
@@ -443,7 +520,6 @@ function App() {
           disabled={buttonsActive.newLog ? false : true}
           className={`button-obj new-log ${buttonsActive.newLog ? "active" : "inactive"}`}
           onClick={() => {
-            // toggleButton('newLog');
             fetchNewLogId();
             setIsFormLocked(false);
           }}
@@ -463,8 +539,7 @@ function App() {
           disabled={buttonsActive.deleteLog ? false : true}
           className={`button-obj delete-log ${buttonsActive.deleteLog ? "active" : "inactive"}`}
           onClick={() => {
-            console.log("Delete Log Pressed");
-            // toggleButton('deleteLog')
+            console.log("NOT IMPLEMENTED: Delete Log Pressed");
           }}
         >
           Delete Log
@@ -514,17 +589,23 @@ function App() {
             disabled={buttonsActive.updateLog ? false : true}
           />
         </div>
-        <div className="form-row">
-          <label>Log Notes:</label>
-          <textarea
-            name="log_notes"
-            value={formData.log_notes}
-            readOnly={isFormLocked && !isUpdateMode}
-            onChange={handleChange}
-            className={isUpdateMode ? "update-mode" : ""}
+        <div className="form-row log-id-uuid-container">
+          <label>Log Created:</label>
+          <input
+            type="text"
+            name="log_date"
+            value={formData.log_date || getFormattedDate()}
+            readOnly
           />
-        </div>
-        <div className="form-row">
+          <label className="uuid-label">Last Updated:</label>
+          <input
+            type="text"
+            name="last_updated"
+            className="uuid-input"
+            value={formData.last_updated}
+            readOnly
+            disabled={buttonsActive.updateLog ? false : true}
+          />{" "}
           <label>Source:</label>
           <input
             type="text"
@@ -568,6 +649,16 @@ function App() {
           </select>
         </div>
         <div className="form-row">
+          <label>Log Notes:</label>
+          <textarea
+            name="log_notes"
+            value={formData.log_notes}
+            readOnly={isFormLocked && !isUpdateMode}
+            onChange={handleChange}
+            className={isUpdateMode ? "update-mode" : ""}
+          />
+        </div>
+        <div className="form-row">
           <label>Misc Notes:</label>
           <textarea
             name="misc"
@@ -592,7 +683,9 @@ function App() {
         <div className="form-row" />
         <div className="buttons">
           <button
-            disabled={!buttonsActive.submitForm}
+            disabled={
+              !buttonsActive.submitForm || (!isUpdateMode && isFormLocked)
+            }
             className={`button-obj submit-form ${buttonsActive.submitForm ? "active" : "inactive"}`}
           >
             {isUpdateMode ? "Update Record" : "Submit"}

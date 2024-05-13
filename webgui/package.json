@@ -15,7 +15,7 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "REACT_APP_API_URL=echo.portland.cnbllc.local REACT_APP_API_PORT=9199 REACT_APP_SECRET_KEY=JazzyJazIsNo1 PORT=9200 HTTPS=true SSL_CRT_FILE=/data/ca/certs/echo.portland.cnbllc.local.crt SSL_KEY_FILE=/data/ca/certs/echo.portland.cnbllc.local.key react-scripts start",
+    "start": "REACT_APP_API_URL=echo.portland.cnbllc.local REACT_APP_API_PORT=9199 REACT_APP_SECRET_KEY=JazzyJazIsNo1 REACT_APP_MILITARY_TIME=true PORT=9200 HTTPS=true SSL_CRT_FILE=/data/ca/certs/echo.portland.cnbllc.local.crt SSL_KEY_FILE=/data/ca/certs/echo.portland.cnbllc.local.key react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

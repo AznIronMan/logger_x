@@ -1,9 +1,11 @@
 import argparse
+import dateutil
 import inspect
 import json
 import linecache
 import logging
 import os
+import dateutil.parser
 import psycopg2
 import psycopg2.extras
 import socket
@@ -31,8 +33,9 @@ from typing import Any, Dict, NewType, Optional, Sequence, Tuple, Union
 # TODO: look at file_exists(), dir_check(), fetch_log_path(), format_datetime(),
 #      get_database_info(), convert_sequence_to_dict(), revert_characters(),
 #      substitute_characters() for use cases or removal
-
-# TODO: add check if webgui folder exists, if so, check for env, if not create env (function)
+# TODO: deprecate /update/ endpoint and replace with /update/{entry_uuid}
+# TODO: revise the setenv to instead modify the package.json in the webgui folder and fix check_webgui_env()
+# TODO: Consider tighening the CORS settings
 
 # Variables and Type Aliases
 
@@ -78,7 +81,7 @@ logging.basicConfig(
 logger_x = logging.getLogger("rich")
 
 
-class NewDBEntry(BaseModel):
+class FullDBEntry(BaseModel):
     log_notes: Optional[str] = None
     source: Optional[str] = None
     level: Optional[str] = "INFO"
@@ -103,10 +106,10 @@ def api_listener(
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Allows all origins
+        allow_origins=["*"],
         allow_credentials=True,
-        allow_methods=["*"],  # Allows all methods
-        allow_headers=["*"],  # Allows all headers
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     load_dotenv(find_dotenv(usecwd=True))
@@ -117,7 +120,7 @@ def api_listener(
 
     @app.post("/add")
     async def api_add_entry(
-        entry: NewDBEntry, secret_key: str = Depends(verify_secret_key)
+        entry: FullDBEntry, secret_key: str = Depends(verify_secret_key)
     ):
         try:
             determined_level = (
@@ -143,7 +146,7 @@ def api_listener(
     @app.post("/update/{entry_uuid}")
     async def api_update_entry_by_uuid(
         entry_uuid: str,
-        entry: NewDBEntry,
+        entry: FullDBEntry,
         secret_key: str = Depends(verify_secret_key),
     ):
         try:
@@ -158,7 +161,7 @@ def api_listener(
                 logging_level=determined_level,
                 source=entry.source,
                 status=(entry.status if entry.status is not None else "new"),
-                misc=entry.misc,
+                misc=entry.misc if entry.misc is not None else None,
             )
             return {"status": "success" if result else "failure"}
         except Exception as e:
@@ -246,7 +249,7 @@ def api_listener(
             try:
                 next_id = get_next_log_id(current_id, db_connection)
                 return {"next_log_id": next_id}
-            except ValueError as ve:  # Handle the case where no next ID exists
+            except ValueError as ve:
                 return {"next_log_id": None, "message": str(ve)}
             finally:
                 close_database(db_connection)
@@ -267,9 +270,7 @@ def api_listener(
             try:
                 previous_id = get_previous_log_id(current_id, db_connection)
                 return {"previous_log_id": previous_id}
-            except (
-                ValueError
-            ) as ve:  # Handle the case where no previous ID exists
+            except ValueError as ve:
                 return {"previous_log_id": None, "message": str(ve)}
             finally:
                 close_database(db_connection)
@@ -577,7 +578,7 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
             cursor.execute(
                 """
                 INSERT INTO logger
-                (level, source, log_notes, status, internal)
+                (level, source, log_notes, status, last_updated, internal)
                 VALUES (%s, %s, %s, %s, %s)
                 """,
                 (
@@ -585,6 +586,7 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
                     log_info.source,
                     log_info.log_notes,
                     log_info.status,
+                    get_timestamp_for_log(),
                     log_info.internal,
                 ),
             )
@@ -592,7 +594,7 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
             cursor.execute(
                 """
                 INSERT INTO logger
-                (level, source, log_notes, status, uuid, internal)
+                (level, source, log_notes, status, last_updated, uuid, internal)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -600,6 +602,7 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
                     log_info.source,
                     log_info.log_notes,
                     log_info.status,
+                    get_timestamp_for_log(),
                     str(uuid.uuid4()),
                     log_info.internal,
                 ),
@@ -647,7 +650,6 @@ def create_new_database(db_connection: DatabaseConn) -> bool:
                     source VARCHAR(1024) NOT NULL,
                     log_notes TEXT,
                     status VARCHAR(255) NOT NULL DEFAULT 'new',
-                    status_notes TEXT,
                     last_updated TIMESTAMP,
                     uuid VARCHAR(255) NOT NULL UNIQUE DEFAULT uuid_generate_v4(),
                     internal JSONB
@@ -664,7 +666,6 @@ def create_new_database(db_connection: DatabaseConn) -> bool:
                     source VARCHAR(1024) NOT NULL,
                     log_notes TEXT,
                     status VARCHAR(255) NOT NULL DEFAULT 'new',
-                    status_notes TEXT,
                     last_updated TIMESTAMP,
                     uuid UUID NOT NULL UNIQUE,
                     internal TEXT
@@ -817,12 +818,12 @@ def get_log_by_uuid(
     try:
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                "SELECT id, uuid, log_notes, source, level, internal FROM logger WHERE uuid = %s",
+                "SELECT id, uuid, log_notes, source, level, internal, datetime, last_updated FROM logger WHERE uuid = %s",
                 (uuid,),
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                "SELECT id, uuid, log_notes, source, level, internal FROM logger WHERE uuid = ?",
+                "SELECT id, uuid, log_notes, source, level, internal, datetime, last_updated FROM logger WHERE uuid = ?",
                 (uuid,),
             )
         else:
@@ -835,7 +836,9 @@ def get_log_by_uuid(
                 "log_notes": log[2],
                 "source": log[3],
                 "level": log[4],
-                "internal": log[5],
+                "internal": json_to_string(log[5])[1] if log[5] else None,
+                "datetime": (log[6]),
+                "last_updated": ((log[7]) if log[7] else None),
             }
         else:
             raise HTTPException(status_code=404, detail="UUID not found")
@@ -925,6 +928,10 @@ def get_uuid_by_log_id(db_connection: DatabaseConn, log_id: int) -> str:
         cursor.close()
 
 
+def get_timestamp_for_log(milliseconds: bool = True) -> str:
+    return str(format_datetime(datetime.utcnow(), milliseconds))
+
+
 def json_to_string(json_package: Dict[str, str]) -> Detailed_Result:
     try:
         json_converted = json.dumps(
@@ -977,7 +984,7 @@ def log_to_file(
     level: str = "INFO",
 ) -> bool:
     wrap_text_at = 80
-    today = str(format_datetime(datetime.utcnow())).split(" ")[0]
+    today = str(get_timestamp_for_log(False)).split(" ")[0]
     now = datetime.utcnow()
     try:
         log_file = fetch_log_path()
@@ -1276,6 +1283,19 @@ def new_log_entry(
             return False, "Huge Logging Failure"
 
 
+def prepare_datetime_for_db(string_format: Optional[str] = None) -> str:
+    try:
+        if string_format and string_format.strip():
+            parsed_date = dateutil.parser.parse(string_format)
+        else:
+            return get_timestamp_for_log()
+        return parsed_date.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    except ValueError as e:
+        raise ValueError(
+            f"Could not parse the provided date string: {string_format}"
+        ) from e
+
+
 def revert_characters(formatted_str: str) -> str:
     subs: Dict[str, str] = {
         "⟦": "[",
@@ -1371,7 +1391,6 @@ def set_log_to_deleted(db_connection: DatabaseConn, log_id: int, uuid: str):
         update_values = {
             "uuid": uuid,
             "status": "resolved",
-            "status_notes": existing_log.get("status_notes", ""),
             "internal": existing_log.get("internal", ""),
         }
         update_db_log(db_connection, uuid, **update_values)
@@ -1431,14 +1450,9 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
     if not entry_uuid:
         raise ValueError("entry_uuid is required to update a log entry.")
     status = kwargs.get("status")
-    status_notes = kwargs.get("status_notes")
     internal = kwargs.get("internal")
-    if None in [status, status_notes, internal]:
-        raise ValueError(
-            "Missing one or more required arguments: "
-            "status, status_notes, internal\n"
-            "There is nothing to update."
-        )
+    if None in [status, internal]:
+        raise ValueError("There is nothing to update.")
     set_clause = []
     where_clause = []
     values = []
@@ -1449,9 +1463,6 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
             if status is not None:
                 set_clause.append("status = %s")
                 values.append(status)
-            if status_notes is not None:
-                set_clause.append("status_notes = %s")
-                values.append(status_notes)
             if internal is not None:
                 set_clause.append("internal = %s")
                 values.append(json.dumps(internal))
@@ -1460,9 +1471,6 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
             if status is not None:
                 set_clause.append("status = ?")
                 values.append(status)
-            if status_notes is not None:
-                set_clause.append("status_notes = ?")
-                values.append(status_notes)
             if internal is not None:
                 set_clause.append("internal = ?")
                 values.append(json.dumps(internal))
@@ -1489,7 +1497,6 @@ def update_db_log(db_connection: DatabaseConn, entry_uuid, **kwargs) -> bool:
             key: value
             for key, value in {
                 "status": status,
-                "status_notes": status_notes,
                 "internal": internal,
                 "uuid": uuid,
             }.items()
@@ -1518,39 +1525,69 @@ def update_db_log_by_uuid(
     """
     db_connection = None
     cursor = None
+    misc_check = misc
+    if misc_check is not None and misc_check.lower().startswith("misc:"):
+        misc_check = misc_check[5:]
+    if misc_check is not None:
+        formatted_misc = {"misc": misc_check}
+        misc_validated = json_validator(formatted_misc, False)
+        if misc_validated[0]:
+            misc = json.dumps(misc_validated[1])
     try:
         db_connection = connect_database()
         cursor = db_connection.cursor()
         if isinstance(db_connection, PostgresConn):
+            update_string = "SET level = %s, source = %s, log_notes = %s, status = %s, last_updated = %s"
+            if misc:
+                update_string += ", internal = %s"
             cursor.execute(
-                """
-                UPDATE logger
-                SET level = %s, source = %s, log_notes = %s, status = %s, internal = %s
-                WHERE uuid = %s
-                """,
+                f"UPDATE logger {update_string} WHERE uuid = %s",
                 (
-                    logging_level,
-                    source,
-                    logging_msg,
-                    status,
-                    misc,
-                    uuid,
+                    (
+                        logging_level,
+                        source,
+                        logging_msg,
+                        status,
+                        get_timestamp_for_log(),
+                        misc,
+                        uuid,
+                    )
+                    if misc
+                    else (
+                        logging_level,
+                        source,
+                        logging_msg,
+                        status,
+                        get_timestamp_for_log(),
+                        uuid,
+                    )
                 ),
             )
         elif type(db_connection) == SQLiteConn:
+            update_string = "SET level = ?, source = ?, log_notes = ?, status = ?, last_updated = ?"
+            if misc:
+                update_string += ", internal = ?"
             cursor.execute(
-                """
-                UPDATE logger
-                SET level = ?, source = ?, log_notes = ?, status = ?, internal = ?
-                WHERE uuid = ?
-                """,
+                f"UPDATE logger {update_string} WHERE uuid = ?",
                 (
-                    logging_level,
-                    source,
-                    logging_msg,
-                    status,
-                    misc,
-                    uuid,
+                    (
+                        logging_level,
+                        source,
+                        logging_msg,
+                        status,
+                        get_timestamp_for_log(),
+                        misc,
+                        uuid,
+                    )
+                    if misc
+                    else (
+                        logging_level,
+                        source,
+                        logging_msg,
+                        status,
+                        get_timestamp_for_log(),
+                        uuid,
+                    )
                 ),
             )
 
@@ -1573,7 +1610,7 @@ def update_db_log_by_uuid(
             internal=misc,
         )
         logger_x.critical(
-            f"[update_database_log({type(db_connection)}) failed]\n"
+            f"[update_db_log_by_uuid({type(db_connection)}) failed]\n"
             f"[uuid]:{uuid}\n"
             f"[Exception]:{e}\n\n"
             f"[Detailed Info]:\n{error_message}"
@@ -1600,9 +1637,7 @@ def webgui_check() -> None:
             for key in keys_to_check:
                 if key in root_env:
                     f.write(f"{key}={root_env[key]}\n")
-        check_file_permissions(
-            root_env_path, env_path
-        )  # Set permissions for new .env file
+        check_file_permissions(root_env_path, env_path)
     else:
         env_values = dotenv_values(env_path)
         for key in keys_to_check:
