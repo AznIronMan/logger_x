@@ -1,10 +1,10 @@
 # Logger_X Server by Clark & Burke, LLC
 
-- **Version**: v1.1.3
-- **Date**: 04.30.2024 @ 09:50 PM PST
+- **Version**: v1.2.0
+- **Date**: 05.18.2024 @ 00:20 AM PST
 - **Written by**: Geoff Clark of Clark & Burke, LLC
 
-- **README.md Last Updated**: 04.26.2024
+- **README.md Last Updated**: 05.18.2024
 
 Logger_X Server is a comprehensive logging tool designed for robust and flexible logging in Python applications. It supports both file-based and database-based logging, with features for creating, updating, and managing log entries. Additional functionalities include an API listener for receiving log data, and planned features for a console interface and GUI.
 
@@ -74,7 +74,31 @@ python logger_x.py -u '{"uuid": "entry-uuid", "status": "new-status"}'
 python logger_x.py -l
 ```
 
-Note: Detailed usage for each feature will be provided as these are implemented.
+## Web GUI
+
+The Logger_X Server now includes a web GUI for easier log management. The frontend is built with React, and the backend uses FastAPI. To run the web GUI:
+
+1. Ensure you have the necessary environment variables set in your `.env` file.
+2. Navigate to the `webgui` directory and install the required packages:
+
+   ```bash
+   cd webgui
+   npm install
+   ```
+
+3. Start the web GUI:
+   ```bash
+   npm start
+   ```
+
+### Environment Variables
+
+The following environment variables are required for the web GUI:
+
+- `REACT_APP_API_URL`
+- `REACT_APP_API_PORT`
+- `REACT_APP_SECRET_KEY`
+- `REACT_APP_MILITARY_TIME` (optional, default is `false`)
 
 ## Future Features
 

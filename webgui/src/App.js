@@ -350,11 +350,82 @@ function App() {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    const newValue = type === "checkbox" ? checked : value || "";
+    let newValue = value || "";
+
+    if (name === "admin_delete") {
+      newValue = checked;
+    } else if (type === "checkbox") {
+      newValue = checked;
+    }
+
     setFormData((prev) => ({
       ...prev,
       [name]: newValue,
     }));
+  };
+
+  const handleClear = async () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to clear the form?"
+    );
+
+    if (!confirmed) {
+      return;
+    } else {
+      if (isUpdateMode) {
+        setIsUpdateMode(false);
+      } else {
+        // Existing clear form logic here
+      }
+      setButtonsActive({
+        newLog: true,
+        submitForm: true,
+        clearForm: true,
+        updateLog: false,
+        deleteLog: false,
+      });
+      clearForm();
+      fetchNewLogId();
+      if (debugMode) console.log("Form cleared");
+    }
+  };
+
+  const handleDeleteLogClick = async () => {
+    console.log("Debug Admin:", formData.admin_delete);
+    if (formData.log_id) {
+      const confirmed = window.confirm(
+        "Are you sure you want to delete this log?"
+      );
+      if (confirmed) {
+        try {
+          const deleteEndpoint = formData.admin_delete
+            ? "admindeletelog"
+            : "deletelog";
+          const response = await axios({
+            method: "delete",
+            url: `https://${apiURL}:${apiPort}/${deleteEndpoint}/${formData.log_id}/${formData.uuid}`,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Secret-Key": secretKey,
+            },
+          });
+
+          if (debugMode) console.log("Server Response:", response.data);
+          if (response.data.status === "success") {
+            alert("Log deleted successfully!");
+            clearForm();
+            fetchNewLogId();
+          } else {
+            alert("Failed to delete log: " + response.data.message);
+          }
+        } catch (error) {
+          if (debugMode) console.error("Error deleting log:", error);
+          alert("Failed to delete log: " + error.message);
+        }
+      }
+    } else {
+      alert("No log ID found to delete.");
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -423,32 +494,6 @@ function App() {
       previousLog: false,
       nextLog: false,
     });
-  };
-
-  const handleClear = async () => {
-    const confirmed = window.confirm(
-      "Are you sure you want to clear the form?"
-    );
-
-    if (!confirmed) {
-      return;
-    } else {
-      if (isUpdateMode) {
-        setIsUpdateMode(false);
-      } else {
-        // Existing clear form logic here
-      }
-      setButtonsActive({
-        newLog: true,
-        submitForm: true,
-        clearForm: true,
-        updateLog: false,
-        deleteLog: false,
-      });
-      clearForm();
-      fetchNewLogId();
-      if (debugMode) console.log("Form cleared");
-    }
   };
 
   const stripInvalidCharacters = (input) => {
@@ -539,7 +584,7 @@ function App() {
           disabled={buttonsActive.deleteLog ? false : true}
           className={`button-obj delete-log ${buttonsActive.deleteLog ? "active" : "inactive"}`}
           onClick={() => {
-            console.log("NOT IMPLEMENTED: Delete Log Pressed");
+            handleDeleteLogClick();
           }}
         >
           Delete Log
@@ -674,7 +719,7 @@ function App() {
             type="checkbox"
             className="admin-delete-checkbox"
             name="admin_delete"
-            checked={!!!formData.admin_delete}
+            checked={formData.admin_delete}
             onChange={handleChange}
             hidden={!buttonsActive.deleteLog}
           />

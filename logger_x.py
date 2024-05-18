@@ -700,27 +700,31 @@ def create_new_database(db_connection: DatabaseConn) -> bool:
         return False
 
 
-def delete_log_admin(
-    db_connection: DatabaseConn, log_id: int, uuid: str
-) -> bool:
+def delete_log_admin(db_connection: DatabaseConn, log_id: int, uuid: str):
     """
     Delete a log entry from the database.
     """
-    cursor = db_connection.cursor()
-    if isinstance(db_connection, PostgresConn):
-        cursor.execute(
-            "DELETE FROM logger WHERE id = %s AND uuid = %s", (log_id, uuid)
-        )
-    elif type(db_connection) == SQLiteConn:
-        cursor.execute(
-            "DELETE FROM logger WHERE id = ? AND uuid = ?", (log_id, uuid)
-        )
-    else:
-        raise Exception("Unsupported database connection type")
+    try:
+        cursor = db_connection.cursor()
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute(
+                "DELETE FROM logger WHERE id = %s AND uuid = %s",
+                (log_id, uuid),
+            )
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute(
+                "DELETE FROM logger WHERE id = ? AND uuid = ?", (log_id, uuid)
+            )
+        else:
+            raise Exception("Unsupported database connection type")
 
-    db_connection.commit()
-    cursor.close()
-    return True
+        db_connection.commit()
+        cursor.close()
+        return {"status": "success"}
+    except Exception as e:
+        cursor.close()
+        close_database(db_connection)
+        raise Exception(f"[delete_log_admin() failed]: {e}")
 
 
 def dir_check(dir_path: str, create_dir: bool = True) -> bool:
@@ -860,17 +864,19 @@ def get_new_log_id(db_connection: DatabaseConn) -> int:
 
 def get_next_log_id(current_id: int, db_connection: DatabaseConn) -> int:
     """
-    Fetch the next log ID after the current one.
+    Fetch the next log ID after the current one, skipping logs with status 'deleted'.
     """
     cursor = db_connection.cursor()
     try:
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                "SELECT MIN(id) FROM logger WHERE id > %s", (current_id,)
+                "SELECT MIN(id) FROM logger WHERE id > %s AND status != 'deleted'",
+                (current_id,),
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                "SELECT MIN(id) FROM logger WHERE id > ?", (current_id,)
+                "SELECT MIN(id) FROM logger WHERE id > ? AND status != 'deleted'",
+                (current_id,),
             )
         else:
             raise Exception("Unsupported database connection type")
@@ -886,17 +892,19 @@ def get_next_log_id(current_id: int, db_connection: DatabaseConn) -> int:
 
 def get_previous_log_id(current_id: int, db_connection: DatabaseConn) -> int:
     """
-    Fetch the previous log ID before the current one.
+    Fetch the previous log ID before the current one, skipping logs with status 'deleted'.
     """
     cursor = db_connection.cursor()
     try:
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                "SELECT MAX(id) FROM logger WHERE id < %s", (current_id,)
+                "SELECT MAX(id) FROM logger WHERE id < %s AND status != 'deleted'",
+                (current_id,),
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                "SELECT MAX(id) FROM logger WHERE id < ?", (current_id,)
+                "SELECT MAX(id) FROM logger WHERE id < ? AND status != 'deleted'",
+                (current_id,),
             )
         else:
             raise Exception("Unsupported database connection type")
@@ -1338,7 +1346,7 @@ def set_log_to_deleted(db_connection: DatabaseConn, log_id: int, uuid: str):
             logging_msg=current_notes,
             logging_level=current_level,
             source=current_source,
-            status="resolved",
+            status="deleted",
             misc=current_internal,
         )
         if success:
