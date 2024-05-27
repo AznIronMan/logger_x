@@ -39,6 +39,7 @@ Detailed_Result = Tuple[
     Optional[Any],
 ]
 
+logger_x_table = "logger"
 
 DBInfo = namedtuple(
     "DBInfo",
@@ -94,7 +95,6 @@ class UpdateDBLog(BaseModel):
 
     entry_uuid: str
     status: Optional[str] = None
-    status_notes: Optional[str] = None
     internal: Optional[str] = None
 
 
@@ -450,6 +450,25 @@ def build_debug_message(
         return error_message
 
 
+def build_logger_table() -> None:
+    """
+    Build the logger table in the database.
+    """
+    try:
+        db_connection = connect_database()
+        if not table_exists(db_connection, logger_x_table):
+            create_new_database(db_connection)
+        else:
+            logger_x.info(f"The {logger_x_table} table already exists")
+        close_database(db_connection)
+    except Exception as e:
+        logger_x.error(
+            f"Failed to create {logger_x_table} table: {str(e)}",
+            exc_info=True,
+        )
+        raise RuntimeError(f"Failed to create {logger_x_table} table")
+
+
 def check_file_permissions(path: str, apply_to_path: str) -> None:
     """
     Check the permissions of a file or directory and apply them to another.
@@ -496,9 +515,13 @@ def check_log_id_exists(db_connection: DatabaseConn, log_id: int) -> bool:
     cursor = db_connection.cursor()
     try:
         if isinstance(db_connection, PostgresConn):
-            cursor.execute("SELECT id FROM logger WHERE id = %s", (log_id,))
+            cursor.execute(
+                f"SELECT id FROM {logger_x_table} WHERE id = %s", (log_id,)
+            )
         elif type(db_connection) == SQLiteConn:
-            cursor.execute("SELECT id FROM logger WHERE id = ?", (log_id,))
+            cursor.execute(
+                f"SELECT id FROM {logger_x_table} WHERE id = ?", (log_id,)
+            )
         else:
             raise Exception("Unsupported database connection type")
 
@@ -531,7 +554,7 @@ def connect_database(
     def postgresql_connect() -> PostgresConn:
         try:
             connection = psycopg2.connect(
-                dbname=os.getenv("DATABASE_NAME", "logger"),
+                dbname=os.getenv("DATABASE_NAME", logger_x_table),
                 user=os.getenv("DATABASE_USER", "root"),
                 password=os.getenv("DATABASE_CRED", "password"),
                 host=os.getenv("DATABASE_HOST", "localhost"),
@@ -540,7 +563,7 @@ def connect_database(
             return connection
         except Exception as e:
             raise Exception(
-                f"[Failed postgresql_connect() in logger.db_connect()]:{e}"
+                f"[Failed postgresql_connect() in connect_database()]:{e}"
             )
 
     def sqlite_connect(db_path: Optional[str] = None) -> SQLiteConn:
@@ -554,7 +577,7 @@ def connect_database(
             return SQLiteConn(connection)
         except Exception as e:
             raise Exception(
-                f"[Failed sqlite_connect({db_path}) in logger.db_connect()]:{e}"
+                f"[Failed sqlite_connect({db_path}) in connect_database()]:{e}"
             )
 
     try:
@@ -585,10 +608,10 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
         cursor = db_connection.cursor()
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                """
-                INSERT INTO logger
+                f"""
+                INSERT INTO {logger_x_table}
                 (level, source, log_notes, status, last_updated, internal)
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 (
                     log_info.level,
@@ -601,10 +624,10 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                """
-                INSERT INTO logger
+                f"""
+                INSERT INTO {logger_x_table}
                 (level, source, log_notes, status, last_updated, uuid, internal)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     log_info.level,
@@ -635,7 +658,7 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
             internal=log_info.internal,
         )
         logger_x.critical(
-            f"[create_database_log({type(db_connection)}) failed]\n"
+            f"[create_database_log({type(db_connection)}) failed]"
             f"[Exception]:{e}\n\n"
             f"[Detailed Info]:\n{error_message}"
         )
@@ -644,15 +667,15 @@ def create_db_log(log_info: LogInfo, db_connection: DatabaseConn) -> bool:
 
 def create_new_database(db_connection: DatabaseConn) -> bool:
     """
-    Create a new logger database.
+    Create a new logger database table.
     """
     cursor = None
     try:
         cursor = db_connection.cursor()
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                """
-                CREATE TABLE logger (
+                f"""
+                CREATE TABLE IF NOT EXISTS {logger_x_table} (
                     id SERIAL PRIMARY KEY,
                     datetime TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     level VARCHAR(32) NOT NULL,
@@ -667,8 +690,8 @@ def create_new_database(db_connection: DatabaseConn) -> bool:
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                """
-                CREATE TABLE logger (
+                f"""
+                CREATE TABLE IF NOT EXISTS {logger_x_table} (
                     id INTEGER PRIMARY KEY,
                     datetime TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     level VARCHAR(32) NOT NULL,
@@ -690,8 +713,10 @@ def create_new_database(db_connection: DatabaseConn) -> bool:
         cursor.close() if cursor else None
         return True
     except Exception as e:
-        cursor.close() if cursor else None
-        close_database(db_connection) if db_connection else None
+        if cursor:
+            cursor.close()
+        if db_connection:
+            close_database(db_connection)
         logging_info = build_debug_message(
             level="CRITICAL",
             log_notes=str(e),
@@ -708,12 +733,13 @@ def delete_log_admin(db_connection: DatabaseConn, log_id: int, uuid: str):
         cursor = db_connection.cursor()
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                "DELETE FROM logger WHERE id = %s AND uuid = %s",
+                f"DELETE FROM {logger_x_table} WHERE id = %s AND uuid = %s",
                 (log_id, uuid),
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                "DELETE FROM logger WHERE id = ? AND uuid = ?", (log_id, uuid)
+                f"DELETE FROM {logger_x_table} WHERE id = ? AND uuid = ?",
+                (log_id, uuid),
             )
         else:
             raise Exception("Unsupported database connection type")
@@ -791,9 +817,9 @@ def get_first_log_id(db_connection: DatabaseConn) -> int:
     cursor = db_connection.cursor()
     try:
         if isinstance(db_connection, PostgresConn):
-            cursor.execute("SELECT MIN(id) FROM logger")
+            cursor.execute(f"SELECT MIN(id) FROM {logger_x_table}")
         elif type(db_connection) == SQLiteConn:
-            cursor.execute("SELECT MIN(id) FROM logger")
+            cursor.execute(f"SELECT MIN(id) FROM {logger_x_table}")
         else:
             raise Exception("Unsupported database connection type")
 
@@ -814,12 +840,12 @@ def get_log_by_uuid(
     try:
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                "SELECT id, uuid, log_notes, source, level, internal, datetime, last_updated FROM logger WHERE uuid = %s",
+                f"SELECT id, uuid, log_notes, source, level, internal, datetime, last_updated FROM {logger_x_table} WHERE uuid = %s",
                 (uuid,),
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                "SELECT id, uuid, log_notes, source, level, internal, datetime, last_updated FROM logger WHERE uuid = ?",
+                f"SELECT id, uuid, log_notes, source, level, internal, datetime, last_updated FROM {logger_x_table} WHERE uuid = ?",
                 (uuid,),
             )
         else:
@@ -849,9 +875,9 @@ def get_new_log_id(db_connection: DatabaseConn) -> int:
     cursor = db_connection.cursor()
     try:
         if isinstance(db_connection, PostgresConn):
-            cursor.execute("SELECT MAX(id) FROM logger")
+            cursor.execute(f"SELECT MAX(id) FROM {logger_x_table}")
         elif type(db_connection) == SQLiteConn:
-            cursor.execute("SELECT MAX(id) FROM logger")
+            cursor.execute(f"SELECT MAX(id) FROM {logger_x_table}")
         else:
             raise Exception("Unsupported database connection type")
 
@@ -870,12 +896,12 @@ def get_next_log_id(current_id: int, db_connection: DatabaseConn) -> int:
     try:
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                "SELECT MIN(id) FROM logger WHERE id > %s AND status != 'deleted'",
+                f"SELECT MIN(id) FROM {logger_x_table} WHERE id > %s AND status != 'deleted'",
                 (current_id,),
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                "SELECT MIN(id) FROM logger WHERE id > ? AND status != 'deleted'",
+                f"SELECT MIN(id) FROM {logger_x_table} WHERE id > ? AND status != 'deleted'",
                 (current_id,),
             )
         else:
@@ -898,12 +924,12 @@ def get_previous_log_id(current_id: int, db_connection: DatabaseConn) -> int:
     try:
         if isinstance(db_connection, PostgresConn):
             cursor.execute(
-                "SELECT MAX(id) FROM logger WHERE id < %s AND status != 'deleted'",
+                f"SELECT MAX(id) FROM {logger_x_table} WHERE id < %s AND status != 'deleted'",
                 (current_id,),
             )
         elif type(db_connection) == SQLiteConn:
             cursor.execute(
-                "SELECT MAX(id) FROM logger WHERE id < ? AND status != 'deleted'",
+                f"SELECT MAX(id) FROM {logger_x_table} WHERE id < ? AND status != 'deleted'",
                 (current_id,),
             )
         else:
@@ -925,9 +951,15 @@ def get_uuid_by_log_id(db_connection: DatabaseConn, log_id: int) -> str:
     cursor = db_connection.cursor()
     try:
         if isinstance(db_connection, PostgresConn):
-            cursor.execute("SELECT uuid FROM logger WHERE id = %s", (log_id,))
+            cursor.execute(
+                f"SELECT uuid FROM {logger_x_table} WHERE id = %s",
+                (log_id,),
+            )
         elif type(db_connection) == SQLiteConn:
-            cursor.execute("SELECT uuid FROM logger WHERE id = ?", (log_id,))
+            cursor.execute(
+                f"SELECT uuid FROM {logger_x_table} WHERE id = ?",
+                (log_id,),
+            )
         else:
             raise Exception("Unsupported database connection type")
 
@@ -1047,7 +1079,7 @@ def new_log_entry(
         os.getenv("DATABASE_CRED", "password"),
         os.getenv("DATABASE_HOST", "localhost"),
         int(os.getenv("DATABASE_PORT", 5432)),
-        os.getenv("DATABASE_NAME", "logger"),
+        os.getenv("DATABASE_NAME", logger_x_table),
     ]
     dbinfo = {
         "LOGGER_MODE": raw_dbinfo[0],
@@ -1411,6 +1443,32 @@ def substitute_characters(original_str: str) -> str:
     return formatted_str
 
 
+def table_exists(db_connection: DatabaseConn, table_name: str) -> bool:
+    """
+    Check if a table exists in the database.
+    """
+    cursor = db_connection.cursor()
+    try:
+        if isinstance(db_connection, PostgresConn):
+            cursor.execute(
+                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = %s)",
+                (table_name,),
+            )
+        elif type(db_connection) == SQLiteConn:
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            )
+        else:
+            raise Exception("Unsupported database connection type")
+
+        result = cursor.fetchone()
+        exists = result[0] if result is not None else False
+        return exists
+    finally:
+        cursor.close()
+
+
 def update_db_log_by_uuid(
     uuid: str,
     logging_msg: Optional[str],
@@ -1440,7 +1498,7 @@ def update_db_log_by_uuid(
             if misc:
                 update_string += ", internal = %s"
             cursor.execute(
-                f"UPDATE logger {update_string} WHERE uuid = %s",
+                f"UPDATE {logger_x_table} {update_string} WHERE uuid = %s",
                 (
                     (
                         logging_level,
@@ -1467,7 +1525,7 @@ def update_db_log_by_uuid(
             if misc:
                 update_string += ", internal = ?"
             cursor.execute(
-                f"UPDATE logger {update_string} WHERE uuid = ?",
+                f"UPDATE {logger_x_table} {update_string} WHERE uuid = ?",
                 (
                     (
                         logging_level,
@@ -1654,16 +1712,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
 
         if args.build:
-            try:
-                new_connection = connect_database()
-                if new_connection:
-                    create_new_database(new_connection)
-                    close_database(new_connection)
-                    print("Database created successfully.")
-                else:
-                    raise Exception("Failed to connect to database.")
-            except Exception as e:
-                raise Exception(f"Failed to create database: {e}")
+            build_logger_table()
         elif args.add:
             new_log_entry(**args.add)
         elif args.update:
@@ -1715,6 +1764,11 @@ if __name__ == "__main__":
                     ssl = args.ssl
                 else:
                     ssl = None
+            (
+                build_logger_table()
+                if not table_exists(connect_database(), logger_x_table)
+                else None
+            )
             api_listener(ip, port, ssl)
         else:
             message = (

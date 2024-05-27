@@ -1,10 +1,10 @@
 # Logger_X Server by Clark & Burke, LLC
 
-- **Version**: v1.2.0
-- **Date**: 05.18.2024 @ 00:20 AM PST
+- **Version**: v1.2.1
+- **Date**: 05.27.2024 @ 09:35 AM PST
 - **Written by**: Geoff Clark of Clark & Burke, LLC
 
-- **README.md Last Updated**: 05.18.2024
+- **README.md Last Updated**: 05.27.2024
 
 Logger_X Server is a comprehensive logging tool designed for robust and flexible logging in Python applications. It supports both file-based and database-based logging, with features for creating, updating, and managing log entries. Additional functionalities include an API listener for receiving log data, and planned features for a console interface and GUI.
 
@@ -95,10 +95,22 @@ The Logger_X Server now includes a web GUI for easier log management. The fronte
 
 The following environment variables are required for the web GUI:
 
+- `HTTPS` (boolean, manual, should mirror if .env has SSL cert/key defined or not)
 - `REACT_APP_API_URL`
 - `REACT_APP_API_PORT`
 - `REACT_APP_SECRET_KEY`
 - `REACT_APP_MILITARY_TIME` (optional, default is `false`)
+
+## Completed Features
+
+- File-based logging
+- Database-based logging (PostgreSQL/SQLite)
+- CLI for adding and updating log entries
+- API listener for receiving log data
+- Web GUI for log management
+- Automated installation script
+- Automated virtual environment creation
+- Automated launcher creation
 
 ## Future Features
 
@@ -107,6 +119,16 @@ The following environment variables are required for the web GUI:
 - Advanced log management (search, export, updating, etc.) in interface
 - Support for MySQL, Mongo, Redis, and other databases
 - AI and ML integration for log analysis and anomaly detection
+
+## Update Notes
+
+### Version 1.2.1 - 05.27.2024 @ 09:35 AM PST
+
+- Fixed `create_db_log()` not having the proper number of parameters for DB writing.
+- Added `logger_x_table_name` variable.
+- Added HTTP/HTTPS variable for flexibility and auto-adjustment based on `.env` (for backend) and frontend will look at `https=boolean` in the `npm start` in `package.json` for adjustment.
+- Fixed `create_database()` not working and added `table_exists()` function.
+- Updated the listener CLI argument to include a check if the table exists and if not, create it.
 
 ## Author Information
 

@@ -77,6 +77,7 @@ function App() {
   const apiURL = process.env.REACT_APP_API_URL || "localhost";
   const apiPort = parseInt(process.env.REACT_APP_API_PORT) || 0;
   const secretKey = process.env.REACT_APP_SECRET_KEY || null;
+  const httpMode = Boolean(process.env.HTTPS) ? "https" : "http";
 
   // functions
   const checkLogIdExists = useCallback(
@@ -91,7 +92,7 @@ function App() {
       }
       try {
         const response = await axios.get(
-          `https://${apiURL}:${apiPort}/checkid/${logId}`,
+          `${httpMode}://${apiURL}:${apiPort}/checkid/${logId}`,
           {
             headers: {
               "Content-Type": "application/json",
@@ -116,7 +117,7 @@ function App() {
         return false;
       }
     },
-    [apiURL, apiPort, secretKey]
+    [apiURL, apiPort, secretKey, httpMode]
   );
 
   const checkSubmission = useCallback((notes, source, level, status) => {
@@ -149,7 +150,7 @@ function App() {
     try {
       setIsUpdateMode(false);
       const response = await axios.get(
-        `https://${apiURL}:${apiPort}/newlogid`,
+        `${httpMode}://${apiURL}:${apiPort}/newlogid`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -180,6 +181,7 @@ function App() {
     apiURL,
     apiPort,
     secretKey,
+    httpMode,
     checkLogIdExists,
     setIsFormLocked,
     getFormattedDate,
@@ -188,7 +190,7 @@ function App() {
   const fetchFirstLogId = useCallback(async () => {
     try {
       const response = await axios.get(
-        `https://${apiURL}:${apiPort}/firstlogid`,
+        `${httpMode}://${apiURL}:${apiPort}/firstlogid`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -200,12 +202,12 @@ function App() {
     } catch (error) {
       if (debugMode) console.error("Failed to fetch first log ID:", error);
     }
-  }, [apiURL, apiPort, secretKey]);
+  }, [apiURL, apiPort, secretKey, httpMode]);
 
   const fetchNextLogId = useCallback(async () => {
     try {
       const response = await axios.get(
-        `https://${apiURL}:${apiPort}/nextlogid/${formData.log_id}`,
+        `${httpMode}://${apiURL}:${apiPort}/nextlogid/${formData.log_id}`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -216,7 +218,7 @@ function App() {
       const nextLogId = response.data.next_log_id;
       if (nextLogId !== null) {
         const uuidResponse = await axios.get(
-          `https://${apiURL}:${apiPort}/uuid/${nextLogId}`,
+          `${httpMode}://${apiURL}:${apiPort}/uuid/${nextLogId}`,
           {
             headers: {
               "Content-Type": "application/json",
@@ -225,7 +227,7 @@ function App() {
           }
         );
         const logResponse = await axios.get(
-          `https://${apiURL}:${apiPort}/getlog/${uuidResponse.data.uuid}`,
+          `${httpMode}://${apiURL}:${apiPort}/getlog/${uuidResponse.data.uuid}`,
           {
             headers: {
               "Content-Type": "application/json",
@@ -257,12 +259,12 @@ function App() {
       alert("Failed to fetch next log ID.");
       setHasNext(false);
     }
-  }, [apiURL, apiPort, secretKey, formData.log_id]);
+  }, [apiURL, apiPort, secretKey, httpMode, formData.log_id]);
 
   const fetchPreviousLogId = useCallback(async () => {
     try {
       const response = await axios.get(
-        `https://${apiURL}:${apiPort}/previouslogid/${formData.log_id}`,
+        `${httpMode}://${apiURL}:${apiPort}/previouslogid/${formData.log_id}`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -273,7 +275,7 @@ function App() {
       const previousLogId = response.data.previous_log_id;
       if (previousLogId !== null) {
         const uuidResponse = await axios.get(
-          `https://${apiURL}:${apiPort}/uuid/${previousLogId}`,
+          `${httpMode}://${apiURL}:${apiPort}/uuid/${previousLogId}`,
           {
             headers: {
               "Content-Type": "application/json",
@@ -282,7 +284,7 @@ function App() {
           }
         );
         const logResponse = await axios.get(
-          `https://${apiURL}:${apiPort}/getlog/${uuidResponse.data.uuid}`,
+          `${httpMode}://${apiURL}:${apiPort}/getlog/${uuidResponse.data.uuid}`,
           {
             headers: {
               "Content-Type": "application/json",
@@ -317,7 +319,7 @@ function App() {
       alert("Failed to fetch previous log ID.");
       setHasPrevious(false);
     }
-  }, [apiURL, apiPort, secretKey, formData.log_id, checkLogIdExists]);
+  }, [apiURL, apiPort, secretKey, httpMode, formData.log_id, checkLogIdExists]);
 
   function formatDateTime(isoDateString) {
     const date = new Date(isoDateString);
@@ -403,7 +405,7 @@ function App() {
             : "deletelog";
           const response = await axios({
             method: "delete",
-            url: `https://${apiURL}:${apiPort}/${deleteEndpoint}/${formData.log_id}/${formData.uuid}`,
+            url: `${httpMode}://${apiURL}:${apiPort}/${deleteEndpoint}/${formData.log_id}/${formData.uuid}`,
             headers: {
               "Content-Type": "application/json",
               "X-Secret-Key": secretKey,
@@ -457,7 +459,7 @@ function App() {
     try {
       const response = await axios({
         method: "post",
-        url: `https://${apiURL}:${apiPort}${endpoint}`,
+        url: `${httpMode}://${apiURL}:${apiPort}${endpoint}`,
         data: formData,
         headers: {
           "Content-Type": "application/json",
