@@ -26,21 +26,25 @@ echo "The following changes will be pushed:"
 git status
 
 read -p "Do you want to push these changes? (yes/y to confirm) : " confirm_push
-confirm_push=${confirm_push,,} # convert to lowercase
+
+# Convert the confirmation to lowercase for consistency
+confirm_push=$(echo "$confirm_push" | tr '[:upper:]' '[:lower:]')
 
 if [[ $confirm_push == y* ]]; then
+    # Get the current branch name
+    branch_name=$(git symbolic-ref --short HEAD)
+
     # Push to GitHub
     echo "Pushing to GitHub..."
-    git push origin main
+    git push origin $branch_name
     echo "GitHub push complete."
 
     # Push to Azure DevOps
     echo "Pushing to Azure DevOps..."
-    git push azure main
+    git push azure $branch_name
     echo "Azure DevOps push complete."
 else
     echo "Push aborted."
 fi
 
 exit 0
-
